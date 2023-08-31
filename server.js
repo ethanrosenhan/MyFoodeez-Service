@@ -1,5 +1,5 @@
 import express from 'express';
-// import sequelize from './utils/database.js';
+import sequelize from './utils/database.js';
 import router from './routes/routes.js';
 import cors from 'cors';
 
@@ -14,7 +14,7 @@ app.use((req, res, next) => {
 });
 
 app.use(router);
-//sequelize.sync({ logging: console.log });
+sequelize.sync({ logging: console.log });
 // sequelize.sync({ logging: false });
 
 app.listen(PORT, async () => {
