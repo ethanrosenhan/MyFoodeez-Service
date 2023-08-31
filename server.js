@@ -14,8 +14,8 @@ app.use((req, res, next) => {
 });
 
 app.use(router);
-sequelize.sync({ logging: console.log });
-// sequelize.sync({ logging: false });
+//sequelize.sync({ logging: console.log });
+sequelize.sync({ logging: false });
 
 app.listen(PORT, async () => {
     console.log(`Listening on ${ PORT }`)
