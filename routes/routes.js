@@ -6,7 +6,7 @@ import Journal from '../controllers/journal.js';
 const router = express.Router();
 
 //non authorized
-router.post('/login', express.json(),  login);
+router.post('/login', express.json(), login);
 router.post('/signup',express.json(), signup);
 router.get('/journal/search', express.json(), addUserToRequest, Journal.search);
 

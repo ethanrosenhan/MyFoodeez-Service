@@ -95,8 +95,8 @@ const signup = async (req, res) => {
                 } else if (passwordHash) {
                     return models.user.create(({
                         email: req.body.email,
-                        first_name: req.body.first_name,
-                        last_name: req.body.last_name,
+                        first_name: req.body.firstname,
+                        last_name: req.body.lastname,
                         password: passwordHash,
                     }))
                     .then(() => {
