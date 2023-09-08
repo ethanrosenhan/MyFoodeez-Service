@@ -3,6 +3,10 @@ import jwt from 'jsonwebtoken';
 import PasswordValidator from 'password-validator';
 import { models } from '../utils/database.js';
 import  { addAudit } from '../lib/AuditHelper.js';
+import Redis from 'ioredis';
+const { REDIS_URL } = process.env;
+const redis = new Redis(REDIS_URL);
+
 
 //TODO:  rotate this auth secret or store somewhere in the ENV
 const AUTH_SECRET ="GF5JpZGZYJGGIHhnIphb";
@@ -138,10 +142,19 @@ const login = (req, res) => {
         return res.status(401).json({message: INVALID_CREDENTIALS_ERROR});
     }
 
-    const token = buildJwtToken(req.body.email);
-    return res.status(200).json({message: "user logged in", "token": token});
+    redis.get("user-" + req.body.email).then((result, error) => {
+        if (error) {
+            console.log("error", error);
+            redis.set("user-" + req.body.email, req.body.email);
+        } else {
+            console.log("result", result);
+        }
+        const token = buildJwtToken(req.body.email);
+        return res.status(200).json({message: "user logged in", "token": token});
+    });
 
-    // checks if email already exists
+
+    // // checks if email already exists
     // models.user.findOne({ where : {
     //     email: req.body.email,
     // }})
