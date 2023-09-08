@@ -129,7 +129,7 @@ const signup = async (req, res) => {
     }
 };
 
-const login = (req, res) => {
+const login = async (req, res) => {
 
     addAudit(req, '/login',  {  email: req.body.email });
 
@@ -142,16 +142,51 @@ const login = (req, res) => {
         return res.status(401).json({message: INVALID_CREDENTIALS_ERROR});
     }
 
-    redis.get("user-" + req.body.email).then((result, error) => {
-        if (error) {
-            console.log("error", error);
-            redis.set("user-" + req.body.email, req.body.email);
+    try {
+        let dbUser = null;
+        const result = await redis.get("user-" + req.body.email);
+        if (result) {
+            dbUser = JSON.parse(result);
         } else {
-            console.log("result", result);
+            dbUser = await models.user.findOne({ where : { email: req.body.email,}});
+            if (dbUser) {
+                redis.set('user-' + req.body.email,JSON.stringify(dbUser)) 
+            }
         }
-        const token = buildJwtToken(req.body.email);
-        return res.status(200).json({message: "user logged in", "token": token});
-    });
+
+        if (!dbUser) {
+            addAudit(req, '/login',  { error: "user not found" });
+            return res.status(404).json({message: INVALID_CREDENTIALS_ERROR});
+        } else {
+            bcrypt.compare(req.body.password, dbUser.password, (err, compareRes) => {
+                if (err) {
+                    addAudit(req, '/login',  { error: "error while checking user password" });
+                    return res.status(502).json({message: INVALID_CREDENTIALS_ERROR});
+                } else if (compareRes) { // password match
+                    const token = buildJwtToken(req.body.email);
+                    return res.status(200).json({message: "user logged in", "token": token});
+                } else {
+                    return res.status(401).json({message: INVALID_CREDENTIALS_ERROR});
+                };
+            });
+        };
+    } catch (err) {
+        addAudit(req, '/login',  { error: err.message });
+        console.log('error', err);
+    }
+   
+
+    // redis.get("user-" + req.body.email).then((result) => {
+    //     let dbUser=null;
+    //     if (result) {
+    //         console.log("error", error);
+    //         redis.set("user-" + req.body.email, req.body.email);
+    //     } else {
+    //         console.log("result", result);
+    //     }
+    //     const token = buildJwtToken(req.body.email);
+    //     return res.status(200).json({message: "user logged in", "token": token});
+    // });
 
 
     // // checks if email already exists
