@@ -145,6 +145,8 @@ const login = async (req, res) => {
     try {
         let dbUser = null;
         const result = await redis.get("user-" + req.body.email);
+        console.log(result);
+
         if (result) {
             dbUser = JSON.parse(result);
         } else {
@@ -153,7 +155,7 @@ const login = async (req, res) => {
                 redis.set('user-' + req.body.email,JSON.stringify(dbUser)) 
             }
         }
-
+        console.log(dbUser);
         if (!dbUser) {
             addAudit(req, '/login',  { error: "user not found" });
             return res.status(404).json({message: INVALID_CREDENTIALS_ERROR});
