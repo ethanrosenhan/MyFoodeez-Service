@@ -1,12 +1,21 @@
 import { Sequelize } from 'sequelize';
 
 export default (sequelize) => {
-    sequelize.define('user', {
+    sequelize.define('signup', {
         id: {
             type: Sequelize.INTEGER,
             autoIncrement: true,
             allowNull: false,
             primaryKey: true,
+        },
+        code: {
+            type: Sequelize.STRING,
+            allowNull: false,
+            unique: true
+        },
+        code_expires_at: {
+            type: Sequelize.DATE,
+            allowNull: false
         },
         email: {
             type: Sequelize.STRING,
@@ -21,11 +30,8 @@ export default (sequelize) => {
         password: {
             type: Sequelize.STRING,
             allowNull: true,
-        },
-        image: {
-            type: Sequelize.STRING,
-            allowNull: true,
         }
+       
     }, {
         updatedAt: 'updated_at',
         createdAt: 'created_at'

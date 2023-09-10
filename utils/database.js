@@ -2,11 +2,12 @@ import { Sequelize } from 'sequelize';
 import journal_entry from '../models/journal_entry.js'
 import user from '../models/user.js'
 import audit from '../models/audit.js'
+import signup from '../models/signup.js'
 import {applyExtraSetup} from './extra-setup.js';
 
 let dboptions = {
-    logging: console.log,
-    //logging: false,     
+    //logging: console.log,
+    logging: false,     
     dialectOptions: {
         ssl: {
             require: true,
@@ -23,7 +24,8 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, dboptions);
 const modelDefiners = [
 	journal_entry,
     user,
-    audit
+    audit,
+    signup
 ];
 
 for (const modelDefiner of modelDefiners) {

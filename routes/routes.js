@@ -1,17 +1,20 @@
 import express from 'express';
 
-import { signup,login,isAuthorized, addUserToRequest } from '../controllers/auth.js';
-import Profile from '../controllers/profile.js';
-import Journal from '../controllers/journal.js';
+import { login,isAuthorized, addUserToRequest } from '../controllers/auth.js';
+import { signupStart,signupFinish } from '../controllers/signup.js';
+
+import { info } from '../controllers/profile.js';
+import {search } from '../controllers/journal.js';
 const router = express.Router();
 
 //non authorized
 router.post('/login', express.json(), login);
-router.post('/signup',express.json(), signup);
-router.get('/journal/search', express.json(), addUserToRequest, Journal.search);
+router.post('/signup-start',express.json(), signupStart);
+router.post('/signup-finish',express.json(), signupFinish);
+router.get('/journal/search', express.json(), addUserToRequest, search);
 
 //authorizeds
-router.get('/profile/info', isAuthorized, Profile.info);
+router.get('/profile/info', isAuthorized, info);
 
 // will match any other path
 router.use('/', (req, res, next) => {
