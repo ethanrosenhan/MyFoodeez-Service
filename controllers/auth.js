@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { models } from '../utils/database.js';
 import  { log } from '../lib/log-helper.js';
-import { AUTH_SECRET, AUTH_EXPIRES_IN } from '../constants/global.js';
+import { AUTH_SECRET, AUTH_EXPIRES_IN, INVALID_CREDENTIALS_ERROR} from '../constants/global.js';
 
 const buildJwtToken = (email)=> {
     return jwt.sign({ email: email}, AUTH_SECRET, { expiresIn: AUTH_EXPIRES_IN });
