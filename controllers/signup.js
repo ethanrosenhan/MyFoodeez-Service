@@ -95,7 +95,9 @@ const signupStart = async (req, res) => {
         return res.status(200).json({message: "verification code has been sent to the email address" });
        
     } catch(e) {
-        log(req, '/signup-start',  { error: e.message });
+        console.log(e);
+        
+        log(req, '/signup-start', e);
         return res.status(500).json({message: INTERNAL_SERVER_ERROR});
     }
 };
