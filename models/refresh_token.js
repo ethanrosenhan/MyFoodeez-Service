@@ -3,13 +3,13 @@ import { Sequelize }  from 'sequelize';
 export default (sequelize) => {
     sequelize.define('refresh_token', {
         id: {
-            type: Sequelize.STRING(3000),
+            type: Sequelize.INTEGER,
             autoIncrement: true,
             allowNull: false,
             primaryKey: true
         },
         token: {
-            type: Sequelize.TEXT,
+            type: Sequelize.STRING(3000),
             allowNull: false,
             unique: true
         },
