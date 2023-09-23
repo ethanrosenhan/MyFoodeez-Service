@@ -11,7 +11,7 @@ const router = express.Router();
 router.post('/login', express.json(), login);
 router.post('/signup-start',express.json(), signupStart);
 router.post('/signup-finish',express.json(), signupFinish);
-router.get('/journal/search', express.json(), addUserToRequest, search);
+router.get('/journal/search', express.json(), isAuthorized, search);
 
 //authorizeds
 router.get('/profile/info', isAuthorized, info);
