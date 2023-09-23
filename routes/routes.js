@@ -1,6 +1,6 @@
 import express from 'express';
 
-import { login,isAuthorized, addUserToRequest } from '../controllers/auth.js';
+import { login,token,isAuthorized, addUserToRequest } from '../controllers/auth.js';
 import { signupStart,signupFinish } from '../controllers/signup.js';
 
 import { info } from '../controllers/profile.js';
@@ -9,12 +9,14 @@ const router = express.Router();
 
 //non authorized
 router.post('/login', express.json(), login);
+router.post('/token', express.json(), token);
 router.post('/signup-start',express.json(), signupStart);
 router.post('/signup-finish',express.json(), signupFinish);
-router.get('/journal/search', express.json(), isAuthorized, search);
 
-//authorizeds
-router.get('/profile/info', isAuthorized, info);
+
+//authorized
+router.get('/journal/search', express.json(), isAuthorized, search);
+router.get('/profile/info', express.json(), isAuthorized, info);
 
 // will match any other path
 router.use('/', (req, res, next) => {

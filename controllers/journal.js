@@ -34,7 +34,7 @@ const search = async (request, response) => {
 		// 	});
 		// }
 
-		const data = ["hello yo"];
+		const data = [{ id: '12345', name: 'COMING SOON'}];
 		// brands.forEach(brand=> {
 		// 	data.push({
 		// 		id: brand.id,

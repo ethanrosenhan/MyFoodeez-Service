@@ -3,6 +3,7 @@ import journal_entry from '../models/journal_entry.js'
 import user from '../models/user.js'
 import audit from '../models/audit.js'
 import signup from '../models/signup.js'
+import refresh_token from '../models/refresh_token.js'
 import {applyExtraSetup} from './extra-setup.js';
 
 let dboptions = {
@@ -25,7 +26,8 @@ const modelDefiners = [
 	journal_entry,
     user,
     audit,
-    signup
+    signup,
+    refresh_token
 ];
 
 for (const modelDefiner of modelDefiners) {
