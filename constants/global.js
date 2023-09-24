@@ -6,16 +6,25 @@ const REFRESH_TOKEN_EXPIRES_IN ="5m";
 
 //Signup controller
 const SIGNUP_CODE_EXPIRES_IN=5;  /* in minutes */
+const SIGNUP_SUBJECT="Foodeez Email Verification"
 
+//Password reset
+const PASSWORD_RESET_CODE_EXPIRES_IN=15;  /* in minutes */
+const PASSWORD_CHANGE_TOKEN_EXPIRES_IN="15m";
 const INVALID_CREDENTIALS_ERROR="Invalid credentials";
 const INVALID_REQUEST_ERROR="Invalid request";
- 
+const PASSWORD_RESET_SUBJECT="Foodeez Email Verification"
+
 export  { 
     TOKEN_SECRET, 
     TOKEN_EXPIRES_IN,
     REFRESH_TOKEN_SECRET, 
     REFRESH_TOKEN_EXPIRES_IN,
     SIGNUP_CODE_EXPIRES_IN,
+    SIGNUP_SUBJECT,
+    PASSWORD_RESET_CODE_EXPIRES_IN,
+    PASSWORD_CHANGE_TOKEN_EXPIRES_IN,
+    PASSWORD_RESET_SUBJECT,
     INVALID_CREDENTIALS_ERROR,
     INVALID_REQUEST_ERROR
 }

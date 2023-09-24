@@ -2,6 +2,7 @@
 
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { Sequelize } from 'sequelize';
 import { models } from '../utils/database.js';
 import  { log } from '../lib/log-helper.js';
 import { 
@@ -25,7 +26,7 @@ const addUserToRequest = async (req, res, next) => {
         const authHeader = req.get("Authorization");
         if (authHeader) {
             const token = authHeader.split(' ')[1];
-            const decodedToken = jwt.verify(token, TOKEN_SECRET);;
+            const decodedToken = jwt.verify(token, TOKEN_SECRET);
             if (decodedToken) {
                 const user = await models.user.findOne({ where : { email: decodedToken.email }});
                 if (!user) {
@@ -45,7 +46,7 @@ const isAuthorized = async (req, res, next) => {
     const authHeader = req.get("Authorization");
 
     if (!authHeader) {
-        return res.status(401).json({ message: 'not authenticated' });
+        return res.status(401).json({ message: 'not authorized' });
     };
     const token = authHeader.split(' ')[1];
     let decodedToken;
@@ -53,15 +54,16 @@ const isAuthorized = async (req, res, next) => {
         decodedToken = jwt.verify(token, TOKEN_SECRET);
     } catch (error) {
         console.log(error);
-        return res.status(401).json({ message: error.message || 'could not decode the token' });
+        return res.status(401).json({ message: 'not authorized' });
     };
 
     if (!decodedToken)
-        return res.status(401).json({ message: 'unauthorized' });
+        return res.status(401).json({ message: 'not authorized' });
 
-    const user = await models.user.findOne({ where : { email: decodedToken.email }});
+    const user = await models.user.findOne({ where : Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')),decodedToken.email.toLowerCase())});
+
     if (!user) {
-        return res.status(401).json({ message: 'unauthorized' });
+        return res.status(401).json({ message: 'not authorized' });
     }
     req.user = user.dataValues;
     req.decodedToken = decodedToken;
@@ -83,7 +85,7 @@ const login = async (req, res) => {
     }
 
     try {
-        const dbUser = await models.user.findOne({ where : { email: req.body.email,}});
+        const dbUser = await models.user.findOne({ where : Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')),req.body.email.toLowerCase())});
         if (!dbUser) {
             log(req, '/login',  { error: "user not found" });
             return res.status(404).json({message: INVALID_CREDENTIALS_ERROR});
@@ -96,6 +98,8 @@ const login = async (req, res) => {
                     const token = buildToken(req.body.email);
                     const refreshToken = buildRefreshToken(req.body.email);
                     const decodedRefreshToken = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+
+                    console.log(decodedRefreshToken);
                     await models.refresh_token.create(({
                         token: refreshToken,
                         data: decodedRefreshToken
@@ -146,8 +150,7 @@ const token = async (req, res) => {
         return res.status(404).json({ message: INVALID_REQUEST_ERROR });
     }
      
-
-    const dbUser = await models.user.findOne({ where : { email: decodedRefreshToken.email }})
+    const dbUser = await models.user.findOne({ where : Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')),decodedRefreshToken.email.toLowerCase())});
     if (!dbUser)
         return res.status(404).json({ message: INVALID_REQUEST_ERROR });
 

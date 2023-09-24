@@ -4,6 +4,7 @@ import user from '../models/user.js'
 import audit from '../models/audit.js'
 import signup from '../models/signup.js'
 import refresh_token from '../models/refresh_token.js'
+import password_reset from '../models/password_reset.js'
 import {applyExtraSetup} from './extra-setup.js';
 
 let dboptions = {
@@ -27,7 +28,8 @@ const modelDefiners = [
     user,
     audit,
     signup,
-    refresh_token
+    refresh_token,
+    password_reset
 ];
 
 for (const modelDefiner of modelDefiners) {

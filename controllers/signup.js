@@ -4,7 +4,10 @@ import bcrypt from 'bcryptjs';
 import randomstring from 'randomstring';
 import { addMinutes, isAfter } from 'date-fns'
 import EmailValidator from 'email-validator';
-import PasswordValidator from 'password-validator';
+
+import  { getPasswordValidator } from '../lib/password-helper.js';
+const passwordValidator = getPasswordValidator();
+
 import formData from 'form-data';
 import Mailgun from 'mailgun.js';
 
@@ -16,7 +19,7 @@ const mailgun = new Mailgun(formData);
 
 import { models } from '../utils/database.js';
 import  { log } from '../lib/log-helper.js';
-import { SIGNUP_CODE_EXPIRES_IN } from '../constants/global.js';
+import { SIGNUP_CODE_EXPIRES_IN, SIGNUP_SUBJECT } from '../constants/global.js';
 const USER_ALREADY_EXISTS_ERROR = "user already exists";
 const INVALID_REQUEST_ERROR = "invalid request";
 const INTERNAL_SERVER_ERROR = "internal server error";
@@ -24,7 +27,6 @@ const INVALID_CODE_ERROR = "invalid code";
 const INVALID_EMAIL_ERROR = "invalid email address";
 const EXPIRED_CODE_ERROR = "expired code";
 
-const passwordValidator = new PasswordValidator();
 //TODO:  move these valid criteria to global constants
 passwordValidator.is().min(8)                          // Minimum length 8
 	.is().max(100)                                  // Maximum length 100
@@ -66,8 +68,7 @@ const signupStart = async (req, res) => {
 
         const errors = passwordValidator.validate(req.body.password, { details: true });
         if (errors.length > 0) {
-            log(req, '/signup-start',  { error: errors });
-            return res.status(400).json(errors);
+            return res.status(400).json({ message: errors.map(e => e.message).join("\n") });
         }
         const passwordHash =  await bcrypt.hash(req.body.password, 12);
         const verifyCode = randomstring.generate({ length: 5,charset: 'numeric',readable: true });
@@ -87,7 +88,7 @@ const signupStart = async (req, res) => {
         const response = await mg.messages.create(process.env.MAILGUN_DOMAIN, {
             from: process.env.SIGNUP_FROM_EMAIL,
             to: [signup.email],
-            subject: process.env.SIGNUP_SUBJECT,
+            subject: SIGNUP_SUBJECT,
             text: "Verification code: " + signup.code,
             html: "<h2>Verification code</h2><h3>" + signup.code + "</h3>"
         });
@@ -133,8 +134,6 @@ const signupFinish = async (req, res) => {
             last_name: signup.last_name,
             password: signup.password
         }));
-
-        await signup.destroy();
 
         return res.status(200).json({message: "user has been created"});
      
