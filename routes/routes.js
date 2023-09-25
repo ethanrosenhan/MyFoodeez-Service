@@ -10,6 +10,7 @@ const router = express.Router();
 //non authorized
 router.post('/login', express.json(), login);
 router.post('/token', express.json(), token);
+router.post('/signup-finish',express.json(), signupFinish);
 router.post('/signup-start',express.json(), signupStart);
 router.post('/password-reset-start',express.json(), passwordResetStart);
 router.post('/password-reset-verify',express.json(), passwordResetVerify);
