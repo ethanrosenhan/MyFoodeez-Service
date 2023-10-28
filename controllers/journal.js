@@ -1,9 +1,40 @@
 import  sequelize, {models} from '../utils/database.js';
+
+import * as formidable from 'formidable';
+import fs from 'fs/promises';
 import Sequelize from 'sequelize';
 const Op = Sequelize.Op;
 import  { log } from '../lib/log-helper.js';
 
-const PROVIDER_NAME = 'WEGIFT';
+
+const addEntry = async (request, response) => {
+	try {
+	
+		var form = new formidable.IncomingForm();
+		form.keepExtensions = true;
+		const [fields, files] = await form.parse(request);
+		const place = fields['place'] ? fields['place'][0] : 'Unknown';
+		const cuisine = fields['cuisine'] ? fields['cuisine'][0] : 'Unknown';
+		const file = files[Object.keys(files)[0]][0];
+		const data = await fs.readFile(file.filepath);
+		const journal_entry = await models.journal_entry.create(({
+			place: place,
+			entry_date: new Date(),
+			cuisine: cuisine,
+			image_type:  file.mimetype,
+			image_name: file.originalFilename,
+			image_data: data,
+			is_private: true
+		}));
+		return response.status(201).json({
+			image: journal_entry.image_data.toString('base64')
+		});
+
+	} catch (error) {
+			return response.status(500).json({ error: error.message });
+	}
+
+}
 
 const search = async (request, response) => {
 	try {
@@ -53,4 +84,4 @@ const search = async (request, response) => {
 	}
 }
 
-export  { search };
+export  { addEntry, search };

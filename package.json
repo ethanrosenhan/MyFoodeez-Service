@@ -20,6 +20,7 @@
     "ejs": "^3.1.6",
     "email-validator": "^2.0.4",
     "express": "^4.15.2",
+    "formidable": "^3.5.1",
     "google-auth-library": "^7.10.2",
     "jsonwebtoken": "^8.5.1",
     "mailgun.js": "^9.2.1",

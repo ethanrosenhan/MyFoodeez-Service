@@ -20,6 +20,18 @@ export default (sequelize) => {
             type: Sequelize.STRING,
             allowNull: false
         },
+        image_type: {
+            type: Sequelize.STRING,
+            allowNull: true
+        },
+        image_name: {
+            type: Sequelize.STRING,
+            allowNull: true
+        },
+        image_data: {
+            type: Sequelize.BLOB('long'),
+            allowNull: true
+        },
         is_private: {
             type: Sequelize.BOOLEAN,
             allowNull: false,

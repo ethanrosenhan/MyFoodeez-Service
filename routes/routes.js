@@ -4,7 +4,7 @@ import { login,token,isAuthorized, addUserToRequest } from '../controllers/auth.
 import { signupStart,signupFinish } from '../controllers/signup.js';
 import { passwordResetStart,passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
 import { info } from '../controllers/profile.js';
-import {search } from '../controllers/journal.js';
+import {addEntry,search } from '../controllers/journal.js';
 const router = express.Router();
 
 //non authorized
@@ -20,6 +20,7 @@ router.post('/password-reset-change', express.json(), isPasswordChangeAuthorized
 
 //authorized
 router.get('/journal/search', express.json(), isAuthorized, search);
+router.post('/journal/add-entry', express.json(), isAuthorized, addEntry);
 router.get('/profile/info', express.json(), isAuthorized, info);
 
 // will match any other path

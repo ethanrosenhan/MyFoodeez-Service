@@ -1,8 +1,8 @@
 //Auth controller
 const TOKEN_SECRET ="GF5JpZGZYJGGIHhnIphb";
-const TOKEN_EXPIRES_IN ="1m";
+const TOKEN_EXPIRES_IN ="1h";
 const REFRESH_TOKEN_SECRET ="GF5JpZGZYJGGIHhnIphbXXXXXXAFDASDFS";
-const REFRESH_TOKEN_EXPIRES_IN ="5m";
+const REFRESH_TOKEN_EXPIRES_IN ="1d";
 
 //Signup controller
 const SIGNUP_CODE_EXPIRES_IN=5;  /* in minutes */
