@@ -2,12 +2,13 @@ import  sequelize, {models} from '../utils/database.js';
 import * as formidable from 'formidable';
 import Sequelize from 'sequelize';
 const Op = Sequelize.Op;
+import sharp from 'sharp';
 import  { log } from '../lib/log-helper.js';
 import { 
     INVALID_REQUEST_ERROR
 } from '../constants/global.js';
 
-const addEntry = async (request, response) => {
+const addPost = async (request, response) => {
 	try {
 	
 		var form = new formidable.IncomingForm();
@@ -20,20 +21,31 @@ const addEntry = async (request, response) => {
 		if (!file || file === 'null') {
 			return response.status(400).json({message: INVALID_REQUEST_ERROR});
 		}
+		console.log("Generating thumbnail for image: " + file);
+		const raw_image = Buffer.from(file, "base64")
+		const thumbnail_image = await sharp(raw_image).rotate()
+					.resize({
+						//fit: sharp.fit.contain,
+						fit: sharp.fit.inside,
+						width: 1080
+					})
+					.jpeg({ mozjpeg: true })
+					.toBuffer();
 
 		const imageType = 'image/png';
 		const imageName = 'Unknown';
-		const journal_entry = await models.journal_entry.create(({
+		const journal_post = await models.journal_post.create(({
 			place: place,
-			entry_date: new Date(),
+			post_date: new Date(),
 			cuisine: cuisine,
 			image_type:  imageType,
 			image_name: imageName,
-			image_data: Buffer.from(file, "base64"),
+			image_data: raw_image,
+			image_thumbnail: thumbnail_image,
 			is_private: true
 		}));
 		return response.status(201).json({
-			image: journal_entry.image_data.toString('base64')
+			image: journal_post.image_thumbnail.toString('base64')
 		});
 
 	} catch (error) {
@@ -53,22 +65,22 @@ const search = async (request, response) => {
 		
 		log(request, '/journal/search', { keyword: keyword, page, page });
 
-		const entries = await models.journal_entry.findAll({ 
-				attributes: ['id', 'entry_date', 'cuisine', 'place'],
+		const posts = await models.journal_post.findAll({ 
+				attributes: ['id', 'post_date', 'cuisine', 'place'],
 				//where: { provider_name: PROVIDER_NAME },
 				limit: limit,
 				offset: offset,
-				order: [['entry_date', 'DESC']]
+				order: [['post_date', 'DESC']]
 		});
 
 		const data = [];
-		entries.forEach(entry=> {
+		posts.forEach(post=> {
 			data.push({
-				id: entry.id,
-				entry_date: entry.entry_date,
-				cuisine: entry.cuisine,
-				place: entry.place,
-				image_url: '/journal/image/' + entry.id
+				id: post.id,
+				post_date: post.post_date,
+				cuisine: post.cuisine,
+				place: post.place,
+				image_url: '/journal/image/' + post.id
 			})
 		});
 
@@ -76,37 +88,6 @@ const search = async (request, response) => {
 			data: data
 		});
 
-		// let brands = null;
-		// if (request.query.keyword && request.query.keyword.length > 0) {
-		// 	brands = await sequelize.query(
-		// 		`SELECT * FROM brands where provider_name = '${PROVIDER_NAME}' and to_tsvector(brand_name) @@ to_tsquery(?) LIMIT ? OFFSET ?`, {
-		// 		model: models.brand,
-		// 		mapToModel: true,
-		// 		replacements: [keyword, limit, offset]
-		// 	});
-		// } else {
-		// 	brands = await models.brand.findAll({ 
-		// 		where: {
-		// 			provider_name: PROVIDER_NAME
-		// 		},
-		// 		limit: limit,
-		// 		offset: offset,
-		// 		order: [['brand_name', 'ASC']]
-		// 	});
-		// }
-
-		//const data = [{ id: '12345', name: 'COMING SOON'}];
-		// brands.forEach(brand=> {
-		// 	data.push({
-		// 		id: brand.id,
-		// 		brand_name: brand.brand_name,
-		// 		brand_image: brand.brand_image
-		// 	})
-		// });
-	
-		// response.json({
-		// 	data: data
-		// });
 	} catch (e) {
 		console.log(e);
 		log(request, '/journal/search',  { error: e.message });
@@ -114,32 +95,32 @@ const search = async (request, response) => {
 	}
 }
 const image = async (request, response) => {
-	const entry = await models.journal_entry.findOne({ 
-		attributes: ['image_data'],
+	const post = await models.journal_post.findOne({ 
+		attributes: ['image_thumbnail'],
 		where: { id: request.params.id }
 	});
 
 	response.writeHead(200, {
      'Content-Type': 'image/png',
-     'Content-Length': entry.image_data.length
+     'Content-Length': post.image_thumbnail.length
    	});
 
-	const img = Buffer.from(entry.image_data, 'base64');
+	const img = Buffer.from(post.image_thumbnail, 'base64');
 
 	response.end(img);
 }
-const entry = async (request, response) => {
+const post = async (request, response) => {
 
-	const entry = await models.journal_entry.findOne({ 
-		attributes: ['id', 'entry_date', 'cuisine', 'place'],
+	const post = await models.journal_post.findOne({ 
+		attributes: ['id', 'post_date', 'cuisine', 'place'],
 		where: { id: request.params.id }
 	});
 	const data = {
-		id: entry.id,
-		entry_date: entry.entry_date,
-		cuisine: entry.cuisine,
-		place: entry.place,
-		image_url: '/journal/image/' + entry.id
+		id: post.id,
+		post_date: post.post_date,
+		cuisine: post.cuisine,
+		place: post.place,
+		image_url: '/journal/image/' + post.id
 	};
 	response.json(data);
 	
@@ -161,4 +142,4 @@ const entry = async (request, response) => {
 // });
 
 
-export  { addEntry, search , image, entry};
+export  { addPost, search , image, post};

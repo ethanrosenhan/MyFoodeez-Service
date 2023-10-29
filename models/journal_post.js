@@ -1,7 +1,7 @@
 import { Sequelize }  from 'sequelize';
 
 export default (sequelize) => {
-    sequelize.define('journal_entry', {
+    sequelize.define('journal_post', {
         id: {
             type: Sequelize.INTEGER,
             autoIncrement: true,
@@ -12,7 +12,7 @@ export default (sequelize) => {
             type: Sequelize.STRING,
             allowNull: false
         },
-        entry_date: {
+        post_date: {
             type: Sequelize.DATE,
             allowNull: false
         },
@@ -29,6 +29,10 @@ export default (sequelize) => {
             allowNull: true
         },
         image_data: {
+            type: Sequelize.BLOB('long'),
+            allowNull: true
+        },
+        image_thumbnail: {
             type: Sequelize.BLOB('long'),
             allowNull: true
         },
