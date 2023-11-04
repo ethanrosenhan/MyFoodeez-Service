@@ -21,7 +21,6 @@ const addPost = async (request, response) => {
 		if (!file || file === 'null') {
 			return response.status(400).json({message: INVALID_REQUEST_ERROR});
 		}
-		console.log("Generating thumbnail for image: " + file);
 		const raw_image = Buffer.from(file, "base64")
 		const thumbnail_image = await sharp(raw_image).rotate()
 					.resize({
@@ -42,9 +41,11 @@ const addPost = async (request, response) => {
 			image_name: imageName,
 			image_data: raw_image,
 			image_thumbnail: thumbnail_image,
-			is_private: true
+			is_private: true,
+			user_id: request.user.id
 		}));
 		return response.status(201).json({
+			id: journal_post.id,
 			image: journal_post.image_thumbnail.toString('base64')
 		});
 
@@ -57,7 +58,8 @@ const addPost = async (request, response) => {
 
 const search = async (request, response) => {
 	try {
-		
+		console.log(request.user);
+
 		const page = parseInt(request.query.page || 1);
 		const limit = parseInt(request.query.limit || 10);
 		const offset = (page - 1) * limit;
@@ -67,7 +69,7 @@ const search = async (request, response) => {
 
 		const posts = await models.journal_post.findAll({ 
 				attributes: ['id', 'post_date', 'cuisine', 'place'],
-				//where: { provider_name: PROVIDER_NAME },
+				where: { user_id: request.user.id },
 				limit: limit,
 				offset: offset,
 				order: [['post_date', 'DESC']]
