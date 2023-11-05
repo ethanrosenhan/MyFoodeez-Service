@@ -28,6 +28,10 @@ export default (sequelize) => {
             type: Sequelize.STRING,
             allowNull: true
         },
+        comments: {
+            type: Sequelize.TEXT,
+            allowNull: true
+        }, 
         image_data: {
             type: Sequelize.BLOB('long'),
             allowNull: true

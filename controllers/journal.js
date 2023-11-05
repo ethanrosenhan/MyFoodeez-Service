@@ -16,6 +16,7 @@ const addPost = async (request, response) => {
 		const [fields] = await form.parse(request);
 		const place = fields['place'] ? fields['place'][0] : 'Unknown';
 		const cuisine = fields['cuisine'] ? fields['cuisine'][0] : 'Unknown';
+		const comments = fields['comments'] ? fields['comments'][0] : '';
 		const file = fields['file'] ? fields['file'][0]: null;
 		//TODO: collect image type and size from the client
 		if (!file || file === 'null') {
@@ -39,6 +40,7 @@ const addPost = async (request, response) => {
 			cuisine: cuisine,
 			image_type:  imageType,
 			image_name: imageName,
+			comments: comments,
 			image_data: raw_image,
 			image_thumbnail: thumbnail_image,
 			is_private: true,
@@ -68,7 +70,7 @@ const search = async (request, response) => {
 		log(request, '/journal/search', { keyword: keyword, page, page });
 
 		const posts = await models.journal_post.findAll({ 
-				attributes: ['id', 'post_date', 'cuisine', 'place'],
+				attributes: ['id', 'post_date', 'cuisine', 'place' ],
 				where: { user_id: request.user.id },
 				limit: limit,
 				offset: offset,
@@ -114,13 +116,14 @@ const image = async (request, response) => {
 const post = async (request, response) => {
 
 	const post = await models.journal_post.findOne({ 
-		attributes: ['id', 'post_date', 'cuisine', 'place'],
+		attributes: ['id', 'post_date', 'cuisine', 'place', 'comments'],
 		where: { id: request.params.id }
 	});
 	const data = {
 		id: post.id,
 		post_date: post.post_date,
 		cuisine: post.cuisine,
+		comments: post.comments,
 		place: post.place,
 		image_url: '/journal/image/' + post.id
 	};
