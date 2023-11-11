@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-import journal_post from '../models/journal_post.js'
+import post from '../models/post.js'
 import user from '../models/user.js'
 import audit from '../models/audit.js'
 import signup from '../models/signup.js'
@@ -24,7 +24,7 @@ if (process.env.DATABASE_USE_SSL && process.env.DATABASE_USE_SSL === 'false') {
 }
 const sequelize = new Sequelize(process.env.DATABASE_URL, dboptions);
 const modelDefiners = [
-	journal_post,
+	post,
     user,
     audit,
     signup,

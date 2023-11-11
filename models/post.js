@@ -1,7 +1,7 @@
 import { Sequelize }  from 'sequelize';
 
 export default (sequelize) => {
-    sequelize.define('journal_post', {
+    sequelize.define('post', {
         id: {
             type: Sequelize.INTEGER,
             autoIncrement: true,

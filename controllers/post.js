@@ -34,7 +34,8 @@ const addPost = async (request, response) => {
 
 		const imageType = 'image/png';
 		const imageName = 'Unknown';
-		const journal_post = await models.journal_post.create(({
+		const post = await models.post.create(({
+		//	id: 'fffff',
 			place: place,
 			post_date: new Date(),
 			cuisine: cuisine,
@@ -47,8 +48,8 @@ const addPost = async (request, response) => {
 			user_id: request.user.id
 		}));
 		return response.status(201).json({
-			id: journal_post.id,
-			image: journal_post.image_thumbnail.toString('base64')
+			id: post.id,
+			image: post.image_thumbnail.toString('base64')
 		});
 
 	} catch (error) {
@@ -67,9 +68,9 @@ const search = async (request, response) => {
 		const offset = (page - 1) * limit;
 		const keyword = request.query.keyword && request.query.keyword.length > 0 ? request.query.keyword + ':*' : '';
 		
-		log(request, '/journal/search', { keyword: keyword, page, page });
+		log(request, '/post/search', { keyword: keyword, page, page });
 
-		const posts = await models.journal_post.findAll({ 
+		const posts = await models.post.findAll({ 
 				attributes: ['id', 'post_date', 'cuisine', 'place' ],
 				where: { user_id: request.user.id },
 				limit: limit,
@@ -84,7 +85,7 @@ const search = async (request, response) => {
 				post_date: post.post_date,
 				cuisine: post.cuisine,
 				place: post.place,
-				image_url: '/journal/image/' + post.id
+				image_url: '/post/image/' + post.id
 			})
 		});
 
@@ -94,12 +95,12 @@ const search = async (request, response) => {
 
 	} catch (e) {
 		console.log(e);
-		log(request, '/journal/search',  { error: e.message });
+		log(request, '/post/search',  { error: e.message });
 		response.json({error: e})
 	}
 }
 const image = async (request, response) => {
-	const post = await models.journal_post.findOne({ 
+	const post = await models.post.findOne({ 
 		attributes: ['image_thumbnail'],
 		where: { id: request.params.id }
 	});
@@ -115,7 +116,7 @@ const image = async (request, response) => {
 }
 const post = async (request, response) => {
 
-	const post = await models.journal_post.findOne({ 
+	const post = await models.post.findOne({ 
 		attributes: ['id', 'post_date', 'cuisine', 'place', 'comments'],
 		where: { id: request.params.id }
 	});
@@ -125,7 +126,7 @@ const post = async (request, response) => {
 		cuisine: post.cuisine,
 		comments: post.comments,
 		place: post.place,
-		image_url: '/journal/image/' + post.id
+		image_url: '/post/image/' + post.id
 	};
 	response.json(data);
 	
