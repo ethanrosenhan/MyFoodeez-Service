@@ -23,19 +23,19 @@ const addPost = async (request, response) => {
 			return response.status(400).json({message: INVALID_REQUEST_ERROR});
 		}
 		const raw_image = Buffer.from(file, "base64")
-		const thumbnail_image = await sharp(raw_image).rotate()
-					.resize({
-						//fit: sharp.fit.contain,
-						fit: sharp.fit.inside,
-						width: 1080
-					})
-					.jpeg({ mozjpeg: true })
-					.toBuffer();
+		// const thumbnail_image = await sharp(raw_image).rotate()
+		// 			.resize({
+		// 				//fit: sharp.fit.contain,
+		// 				fit: sharp.fit.inside,
+		// 				width: 1080
+		// 			})
+		// 			.jpeg({ mozjpeg: true })
+		// 			.toBuffer();
 
 		const imageType = 'image/png';
 		const imageName = 'Unknown';
 		const post = await models.post.create(({
-		//	id: 'fffff',
+		   
 			place: place,
 			post_date: new Date(),
 			cuisine: cuisine,
@@ -43,18 +43,18 @@ const addPost = async (request, response) => {
 			image_name: imageName,
 			comments: comments,
 			image_data: raw_image,
-			image_thumbnail: thumbnail_image,
+			// image_thumbnail: thumbnail_image,
 			is_private: true,
 			user_id: request.user.id
 		}));
 		return response.status(201).json({
 			id: post.id,
-			image: post.image_thumbnail.toString('base64')
+			image: post.image_data.toString('base64')
 		});
 
 	} catch (error) {
-			console.log(error);
-			return response.status(500).json({ error: error.message });
+			//console.log(error);
+			return response.status(500).json({ message: "Error adding post please contact site adminstrator" });
 	}
 
 }
@@ -101,16 +101,16 @@ const search = async (request, response) => {
 }
 const image = async (request, response) => {
 	const post = await models.post.findOne({ 
-		attributes: ['image_thumbnail'],
+		attributes: ['image_data'],
 		where: { id: request.params.id }
 	});
 
 	response.writeHead(200, {
      'Content-Type': 'image/png',
-     'Content-Length': post.image_thumbnail.length
+     'Content-Length': post.image_data.length
    	});
 
-	const img = Buffer.from(post.image_thumbnail, 'base64');
+	const img = Buffer.from(post.image_data, 'base64');
 
 	response.end(img);
 }
