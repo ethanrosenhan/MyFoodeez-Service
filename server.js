@@ -15,6 +15,7 @@ app.use((req, res, next) => {
 });
 
 app.use(router);
+
 //sequelize.sync({ logging: console.log });
 sequelize.sync({ logging: false });
 

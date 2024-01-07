@@ -5,7 +5,30 @@ import { signupStart,signupFinish } from '../controllers/signup.js';
 import { passwordResetStart,passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
 import { info } from '../controllers/profile.js';
 import {addPost,search, image, post } from '../controllers/post.js';
+import proxy from 'express-http-proxy';
 const router = express.Router();
+
+//PROXY for MAPS---NEED to MAKE this authorized
+
+//Proxy for google maps API see https://github.com/FaridSafi/react-native-google-places-autocomplete/blob/master/README.md#web-support
+// router.get('/maps/api', express.json(), isAuthorized, info);
+//https://maps.googleapis.com/maps/api/place/details/json
+
+router.get('/maps/api/place/autocomplete/json', proxy('maps.googleapis.com', {
+    https: true,
+    parseReqBody: false
+  }));
+// router.get('/maps/api/*', (req, res, next) => {
+//         console.log("maps/api!!!!");
+//         next();
+// });
+// router.use('/maps/api/place/autocomplete/json', (req, res, next) => {
+//     console.log("maps/api!!!!");
+//     next();
+// });
+
+
+
 
 //non authorized
 router.post('/login', express.json(), login);
@@ -26,6 +49,8 @@ router.get('/post/search', express.json(), isAuthorized, search);
 router.post('/post', express.json(), isAuthorized, addPost);
 router.get('/post/:id', express.json(), post);
 router.get('/profile/info', express.json(), isAuthorized, info);
+
+
 
 // will match any other path
 router.use('/', (req, res, next) => {

@@ -15,6 +15,8 @@ const addPost = async (request, response) => {
 		form.keepExtensions = true;
 		const [fields] = await form.parse(request);
 		const place = fields['place'] ? fields['place'][0] : 'Unknown';
+		const place_id = fields['place_id'] ? fields['place_id'][0] : null;
+		const place_secondary_text = fields['place_secondary_text'] ? fields['place_secondary_text'][0] : null;
 		const cuisine = fields['cuisine'] ? fields['cuisine'][0] : 'Unknown';
 		const comments = fields['comments'] ? fields['comments'][0] : '';
 		const file = fields['file'] ? fields['file'][0]: null;
@@ -37,6 +39,8 @@ const addPost = async (request, response) => {
 		const post = await models.post.create(({
 		   
 			place: place,
+			place_id: place_id,
+			place_secondary_text: place_secondary_text,
 			post_date: new Date(),
 			cuisine: cuisine,
 			image_type:  imageType,

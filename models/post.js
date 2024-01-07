@@ -10,7 +10,15 @@ export default (sequelize) => {
         },
         place: {
             type: Sequelize.STRING,
-            allowNull: false
+            allowNull: true
+        },
+        place_id: {
+            type: Sequelize.STRING,
+            allowNull: true
+        },
+        place_secondary_text: {
+            type: Sequelize.STRING,
+            allowNull: true
         },
         post_date: {
             type: Sequelize.DATE,
