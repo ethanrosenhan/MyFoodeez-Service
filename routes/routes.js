@@ -17,18 +17,12 @@ const router = express.Router();
 router.get('/maps/api/place/autocomplete/json', proxy('maps.googleapis.com', {
     https: true,
     parseReqBody: false
-  }));
-// router.get('/maps/api/*', (req, res, next) => {
-//         console.log("maps/api!!!!");
-//         next();
-// });
-// router.use('/maps/api/place/autocomplete/json', (req, res, next) => {
-//     console.log("maps/api!!!!");
-//     next();
-// });
+}));
 
-
-
+router.get('/maps/api/place/details/json', proxy('maps.googleapis.com', {
+  https: true,
+  parseReqBody: false
+}));
 
 //non authorized
 router.post('/login', express.json(), login);

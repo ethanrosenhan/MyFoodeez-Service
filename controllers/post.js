@@ -17,6 +17,9 @@ const addPost = async (request, response) => {
 		const place = fields['place'] ? fields['place'][0] : 'Unknown';
 		const place_id = fields['place_id'] ? fields['place_id'][0] : null;
 		const place_secondary_text = fields['place_secondary_text'] ? fields['place_secondary_text'][0] : null;
+		const place_latitude = fields['place_latitude'] ? fields['place_latitude'][0] : null;
+		const place_longitude = fields['place_longitude'] ? fields['place_longitude'][0] : null;
+
 		const cuisine = fields['cuisine'] ? fields['cuisine'][0] : 'Unknown';
 		const comments = fields['comments'] ? fields['comments'][0] : '';
 		const file = fields['file'] ? fields['file'][0]: null;
@@ -41,6 +44,8 @@ const addPost = async (request, response) => {
 			place: place,
 			place_id: place_id,
 			place_secondary_text: place_secondary_text,
+			place_latitude: place_latitude,
+			place_longitude: place_longitude,
 			post_date: new Date(),
 			cuisine: cuisine,
 			image_type:  imageType,

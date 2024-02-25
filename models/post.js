@@ -20,6 +20,14 @@ export default (sequelize) => {
             type: Sequelize.STRING,
             allowNull: true
         },
+        place_latitude: {
+            type: Sequelize.STRING,
+            allowNull: true
+        },
+        place_longitude: {
+            type: Sequelize.STRING,
+            allowNull: true
+        },
         post_date: {
             type: Sequelize.DATE,
             allowNull: false
