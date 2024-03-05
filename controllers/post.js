@@ -68,46 +68,6 @@ const addPost = async (request, response) => {
 
 }
 
-const search = async (request, response) => {
-	try {
-		console.log(request.user);
-
-		const page = parseInt(request.query.page || 1);
-		const limit = parseInt(request.query.limit || 10);
-		const offset = (page - 1) * limit;
-		const keyword = request.query.keyword && request.query.keyword.length > 0 ? request.query.keyword + ':*' : '';
-		
-		log(request, '/post/search', { keyword: keyword, page, page });
-
-		const posts = await models.post.findAll({ 
-				attributes: ['id', 'post_date', 'cuisine', 'place' ],
-				where: { user_id: request.user.id },
-				limit: limit,
-				offset: offset,
-				order: [['post_date', 'DESC']]
-		});
-
-		const data = [];
-		posts.forEach(post=> {
-			data.push({
-				id: post.id,
-				post_date: post.post_date,
-				cuisine: post.cuisine,
-				place: post.place,
-				image_url: '/post/image/' + post.id
-			})
-		});
-
-		response.json({
-			data: data
-		});
-
-	} catch (e) {
-		console.log(e);
-		log(request, '/post/search',  { error: e.message });
-		response.json({error: e})
-	}
-}
 const image = async (request, response) => {
 	const post = await models.post.findOne({ 
 		attributes: ['image_data'],
@@ -157,4 +117,4 @@ const post = async (request, response) => {
 // });
 
 
-export  { addPost, search , image, post};
+export  { addPost, image, post};
