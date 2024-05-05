@@ -24,10 +24,17 @@ const addPost = async (request, response) => {
 		const comments = fields['comments'] ? fields['comments'][0] : '';
 		const file = fields['file'] ? fields['file'][0]: null;
 		//TODO: collect image type and size from the client
-		if (!file || file === 'null') {
-			return response.status(400).json({message: INVALID_REQUEST_ERROR});
+
+		let raw_image = null;
+		// if (!file || file === 'null') {
+		// 	return response.status(400).json({message: INVALID_REQUEST_ERROR});
+		// }
+		if (file && file !== 'null') {
+
+			raw_image =Buffer.from(file, "base64");
+
 		}
-		const raw_image = Buffer.from(file, "base64")
+	
 		// const thumbnail_image = await sharp(raw_image).rotate()
 		// 			.resize({
 		// 				//fit: sharp.fit.contain,
@@ -51,37 +58,46 @@ const addPost = async (request, response) => {
 			image_type:  imageType,
 			image_name: imageName,
 			comments: comments,
-			image_data: raw_image,
+			image_data: raw_image || null,
 			// image_thumbnail: thumbnail_image,
 			is_private: true,
 			user_id: request.user.id
 		}));
+
 		return response.status(201).json({
-			id: post.id,
-			image: post.image_data.toString('base64')
+			id: post.id
+			//image: post.image_data.toString('base64')
 		});
 
 	} catch (error) {
-			//console.log(error);
+			console.log(error);
 			return response.status(500).json({ message: "Error adding post please contact site adminstrator" });
 	}
 
 }
 
 const image = async (request, response) => {
-	const post = await models.post.findOne({ 
-		attributes: ['image_data'],
-		where: { id: request.params.id }
-	});
+	try {
+		const post = await models.post.findOne({ 
+			attributes: ['image_data'],
+			where: { id: request.params.id }
+		});
 
-	response.writeHead(200, {
-     'Content-Type': 'image/png',
-     'Content-Length': post.image_data.length
-   	});
+		response.writeHead(200, {
+		'Content-Type': 'image/png',
+		'Content-Length': post.image_data.length
+		});
 
-	const img = Buffer.from(post.image_data, 'base64');
+		const img = Buffer.from(post.image_data, 'base64');
 
-	response.end(img);
+		response.end(img);
+
+	} catch (error) {
+		console.log(error);
+		return response.status(500).json({ message: "Error please contact site adminstrator" });
+	}
+
+
 }
 const post = async (request, response) => {
 
