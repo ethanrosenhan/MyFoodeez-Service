@@ -23,7 +23,7 @@ export default (sequelize) => {
         place_latitude: {
             type: Sequelize.STRING,
             allowNull: true
-        },
+        }, 
         place_longitude: {
             type: Sequelize.STRING,
             allowNull: true
@@ -31,6 +31,10 @@ export default (sequelize) => {
         post_date: {
             type: Sequelize.DATE,
             allowNull: false
+        },
+        rating: {
+            type: Sequelize.STRING,
+            allowNull: true
         },
         cuisine: {
             type: Sequelize.STRING,

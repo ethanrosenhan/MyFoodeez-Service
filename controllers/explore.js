@@ -12,7 +12,7 @@ const search = async (request, response) => {
 		log(request, '/post/search', { keyword: keyword, page, page });
 
 		const posts = await models.post.findAll({ 
-				attributes: ['id', 'post_date', 'cuisine', 'place', 'place_latitude', 'place_longitude'],
+				attributes: ['id', 'post_date', 'cuisine', 'rating','place', 'comments','place_latitude', 'place_longitude'],
 				where: { user_id: request.user.id },
 				limit: limit,
 				offset: offset,
@@ -25,9 +25,11 @@ const search = async (request, response) => {
 				id: post.id,
 				post_date: post.post_date,
 				cuisine: post.cuisine,
+				rating: post.rating,
 				place: post.place,
 				place_latitude: post.place_latitude,
 				place_longitude: post.place_longitude,
+				comments: post.comments,
 				image_url: '/post/image/' + post.id
 			})
 		});

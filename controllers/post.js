@@ -21,6 +21,7 @@ const addPost = async (request, response) => {
 		const place_longitude = fields['place_longitude'] ? fields['place_longitude'][0] : null;
 
 		const cuisine = fields['cuisine'] ? fields['cuisine'][0] : 'Unknown';
+		const rating = fields['rating'] ? fields['rating'][0] : '';
 		const comments = fields['comments'] ? fields['comments'][0] : '';
 		const file = fields['file'] ? fields['file'][0]: null;
 		//TODO: collect image type and size from the client
@@ -55,6 +56,7 @@ const addPost = async (request, response) => {
 			place_longitude: place_longitude,
 			post_date: new Date(),
 			cuisine: cuisine,
+			rating: rating,
 			image_type:  imageType,
 			image_name: imageName,
 			comments: comments,
@@ -83,14 +85,19 @@ const image = async (request, response) => {
 			where: { id: request.params.id }
 		});
 
-		response.writeHead(200, {
-		'Content-Type': 'image/png',
-		'Content-Length': post.image_data.length
-		});
+		if (post.image_data && post.image_data.length > 0) {
 
-		const img = Buffer.from(post.image_data, 'base64');
+			response.writeHead(200, {
+			'Content-Type': 'image/png',
+			'Content-Length': post.image_data.length
+			});
 
-		response.end(img);
+			const img = Buffer.from(post.image_data, 'base64');
+
+			response.end(img);
+		} else {
+			return response.send("");
+		}
 
 	} catch (error) {
 		console.log(error);
@@ -102,13 +109,14 @@ const image = async (request, response) => {
 const post = async (request, response) => {
 
 	const post = await models.post.findOne({ 
-		attributes: ['id', 'post_date', 'cuisine', 'place', 'comments'],
+		attributes: ['id', 'post_date', 'cuisine','rating', 'place', 'comments'],
 		where: { id: request.params.id }
 	});
 	const data = {
 		id: post.id,
 		post_date: post.post_date,
 		cuisine: post.cuisine,
+		rating: post.rating,
 		comments: post.comments,
 		place: post.place,
 		image_url: '/post/image/' + post.id
