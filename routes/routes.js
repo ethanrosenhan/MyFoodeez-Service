@@ -5,7 +5,8 @@ import { signupStart,signupFinish } from '../controllers/signup.js';
 import { passwordResetStart,passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
 import { info } from '../controllers/profile.js';
 import {addPost,image, post } from '../controllers/post.js';
-import {search } from '../controllers/explore.js';
+import {search, places } from '../controllers/posts.js';
+
 import proxy from 'express-http-proxy';
 const router = express.Router();
 
@@ -40,11 +41,11 @@ router.get('/post/image/:id', express.json(), image);
 router.post('/password-reset-change', express.json(), isPasswordChangeAuthorized, passwordResetChange);
 
 //authorized
-router.get('/explore/search', express.json(), isAuthorized, search);
+router.get('/posts/search', express.json(), isAuthorized, search );
+router.get('/posts/places', express.json(), isAuthorized, places );
 router.post('/post', express.json(), isAuthorized, addPost);
 router.get('/post/:id', express.json(), post);
 router.get('/profile/info', express.json(), isAuthorized, info);
-
 
 
 // will match any other path

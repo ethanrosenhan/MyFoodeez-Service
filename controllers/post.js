@@ -107,21 +107,27 @@ const image = async (request, response) => {
 
 }
 const post = async (request, response) => {
+	try {
+		const post = await models.post.findOne({ 
+			attributes: ['id', 'post_date', 'cuisine','rating', 'place', 'comments'],
+			where: { id: request.params.id }
+		});
+		const data = {
+			id: post.id,
+			post_date: post.post_date,
+			cuisine: post.cuisine,
+			rating: post.rating,
+			comments: post.comments,
+			place: post.place,
+			image_url: '/post/image/' + post.id
+		};
+		response.json(data);
 
-	const post = await models.post.findOne({ 
-		attributes: ['id', 'post_date', 'cuisine','rating', 'place', 'comments'],
-		where: { id: request.params.id }
-	});
-	const data = {
-		id: post.id,
-		post_date: post.post_date,
-		cuisine: post.cuisine,
-		rating: post.rating,
-		comments: post.comments,
-		place: post.place,
-		image_url: '/post/image/' + post.id
-	};
-	response.json(data);
+	} catch (error) {
+		console.log(error);
+		return response.status(500).json({ message: "Error please contact site adminstrator" });
+	}
+
 	
 }
 
