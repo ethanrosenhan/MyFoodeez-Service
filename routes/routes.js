@@ -6,6 +6,8 @@ import { passwordResetStart,passwordResetVerify, passwordResetChange, isPassword
 import { info } from '../controllers/profile.js';
 import {addPost,image, post } from '../controllers/post.js';
 import {search, places } from '../controllers/posts.js';
+import { supportPage, supportSubmit } from '../controllers/support.js';
+import { privacyPage } from '../controllers/privacy.js';
 
 import proxy from 'express-http-proxy';
 const router = express.Router();
@@ -33,6 +35,9 @@ router.post('/signup-finish',express.json(), signupFinish);
 router.post('/signup-start',express.json(), signupStart);
 router.post('/password-reset-start',express.json(), passwordResetStart);
 router.post('/password-reset-verify',express.json(), passwordResetVerify);
+router.get('/support', express.json(), supportPage); 
+router.post('/support/submit', express.json(), supportSubmit); 
+router.get('/privacy', express.json(), privacyPage); 
 
 //TODO: Make images authorized to keep private
 router.get('/post/image/:id', express.json(), image);
@@ -47,6 +52,7 @@ router.post('/post', express.json(), isAuthorized, addPost);
 router.get('/post/:id', express.json(), post);
 router.get('/profile/info', express.json(), isAuthorized, info);
 
+router.post('/support/submit', express.urlencoded({ extended: true }), supportSubmit); // Added route for supportSubmit
 
 // will match any other path
 router.use('/', (req, res, next) => {
