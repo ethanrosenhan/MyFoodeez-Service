@@ -20,7 +20,7 @@ const deleteUserAndPosts = async (request, response) => {
 	log(request, '/profile/delete', { email: request.user.email });
 	try {
 		// Delete posts associated with the user
-		await models.post.destroy({ where: { userId: request.user.id } });
+		await models.post.destroy({ where: { user_id: request.user.id } });
 
 		// Delete the user
 		await models.user.destroy({ where: { id: request.user.id } });
