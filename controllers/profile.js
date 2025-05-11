@@ -16,4 +16,21 @@ const info = async (request, response) => {
 	}
 }
 
-export  { info };
+const deleteUserAndPosts = async (request, response) => {
+	log(request, '/profile/delete', { email: request.user.email });
+	try {
+		// Delete posts associated with the user
+		await models.post.destroy({ where: { userId: request.user.id } });
+
+		// Delete the user
+		await models.user.destroy({ where: { id: request.user.id } });
+
+		response.status(200).json({ message: 'User and associated posts deleted successfully.' });
+	} catch (e) {
+		console.log(e);
+		log(request, '/profile/delete', { error: e.message });
+		response.status(500).json({ error: 'An error occurred while deleting the user and posts.' });
+	}
+};
+
+export  { info, deleteUserAndPosts };

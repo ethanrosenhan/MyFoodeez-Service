@@ -3,7 +3,7 @@ import express from 'express';
 import { login,token,isAuthorized, addUserToRequest } from '../controllers/auth.js';
 import { signupStart,signupFinish } from '../controllers/signup.js';
 import { passwordResetStart,passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
-import { info } from '../controllers/profile.js';
+import { info, deleteUserAndPosts } from '../controllers/profile.js';
 import {addPost,image, post } from '../controllers/post.js';
 import {search, places } from '../controllers/posts.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
@@ -51,6 +51,7 @@ router.get('/posts/places', express.json(), isAuthorized, places );
 router.post('/post', express.json(), isAuthorized, addPost);
 router.get('/post/:id', express.json(), post);
 router.get('/profile/info', express.json(), isAuthorized, info);
+router.delete('/profile/delete', express.json(), isAuthorized, deleteUserAndPosts);
 
 router.post('/support/submit', express.urlencoded({ extended: true }), supportSubmit); // Added route for supportSubmit
 
