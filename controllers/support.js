@@ -101,7 +101,7 @@ const supportPage = async (request, response) => {
 					</div>
 					<div class="faq">
 						<h4>How do I delete my account?</h4>
-						<p>Contact us directly at support@myfoodeez.com to request account deletion.</p>
+						<p>Log in to your account, navigate to "Settings," and choose the "Delete Account" button.</p>
 					</div>
 				</section>
 			</main>
