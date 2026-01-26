@@ -8,22 +8,45 @@ import {
     INVALID_REQUEST_ERROR
 } from '../constants/global.js';
 
+const normalizeFields = (fields) => {
+	const normalized = {};
+	if (!fields) {
+		return normalized;
+	}
+	Object.entries(fields).forEach(([key, value]) => {
+		if (Array.isArray(value)) {
+			normalized[key] = value[0];
+		} else {
+			normalized[key] = value;
+		}
+	});
+	return normalized;
+};
+
+const parsePostRequest = async (request) => {
+	const contentType = request.headers['content-type'] || '';
+	if (contentType.includes('application/json')) {
+		return normalizeFields(request.body);
+	}
+	const form = new formidable.IncomingForm();
+	form.keepExtensions = true;
+	const [fields] = await form.parse(request);
+	return normalizeFields(fields);
+};
+
 const addPost = async (request, response) => {
 	try {
-	
-		var form = new formidable.IncomingForm();
-		form.keepExtensions = true;
-		const [fields] = await form.parse(request);
-		const place = fields['place'] ? fields['place'][0] : 'Unknown';
-		const place_id = fields['place_id'] ? fields['place_id'][0] : null;
-		const place_secondary_text = fields['place_secondary_text'] ? fields['place_secondary_text'][0] : null;
-		const place_latitude = fields['place_latitude'] ? fields['place_latitude'][0] : null;
-		const place_longitude = fields['place_longitude'] ? fields['place_longitude'][0] : null;
+		const fields = await parsePostRequest(request);
+		const place = fields['place'] ? fields['place'] : 'Unknown';
+		const place_id = fields['place_id'] ? fields['place_id'] : null;
+		const place_secondary_text = fields['place_secondary_text'] ? fields['place_secondary_text'] : null;
+		const place_latitude = fields['place_latitude'] ? fields['place_latitude'] : null;
+		const place_longitude = fields['place_longitude'] ? fields['place_longitude'] : null;
 
-		const cuisine = fields['cuisine'] ? fields['cuisine'][0] : 'Unknown';
-		const rating = fields['rating'] ? fields['rating'][0] : '';
-		const comments = fields['comments'] ? fields['comments'][0] : '';
-		const file = fields['file'] ? fields['file'][0]: null;
+		const cuisine = fields['cuisine'] ? fields['cuisine'] : 'Unknown';
+		const rating = fields['rating'] ? fields['rating'] : '';
+		const comments = fields['comments'] ? fields['comments'] : '';
+		const file = fields['file'] ? fields['file'] : null;
 		//TODO: collect image type and size from the client
 
 		let raw_image = null;
@@ -78,6 +101,102 @@ const addPost = async (request, response) => {
 
 }
 
+const updatePostWithFields = async (request, response, fields) => {
+	const updates = {};
+	const updatableFields = [
+		'place',
+		'place_id',
+		'place_secondary_text',
+		'place_latitude',
+		'place_longitude',
+		'cuisine',
+		'rating',
+		'comments'
+	];
+
+	updatableFields.forEach((field) => {
+		if (fields[field] !== undefined) {
+			updates[field] = fields[field];
+		}
+	});
+
+	if (fields.file && fields.file !== 'null') {
+		updates.image_data = Buffer.from(fields.file, 'base64');
+		updates.image_type = 'image/png';
+		updates.image_name = 'Unknown';
+	}
+
+	if (Object.keys(updates).length === 0) {
+		return response.status(400).json({ message: INVALID_REQUEST_ERROR });
+	}
+
+	const post = await models.post.findOne({
+		where: {
+			id: request.params.id,
+			user_id: request.user.id
+		}
+	});
+
+	if (!post) {
+		return response.status(404).json({ message: 'post not found' });
+	}
+
+	await post.update(updates);
+
+	return response.status(200).json({
+		id: post.id,
+		updated: true
+	});
+};
+
+const updatePost = async (request, response) => {
+	try {
+		const fields = await parsePostRequest(request);
+		return await updatePostWithFields(request, response, fields);
+	} catch (error) {
+		console.log(error);
+		return response.status(500).json({ message: "Error updating post please contact site adminstrator" });
+	}
+};
+
+const deletePost = async (request, response) => {
+	try {
+		const post = await models.post.findOne({
+			where: {
+				id: request.params.id,
+				user_id: request.user.id
+			}
+		});
+
+		if (!post) {
+			return response.status(404).json({ message: 'post not found' });
+		}
+
+		await post.destroy();
+		return response.status(200).json({ deleted: true });
+	} catch (error) {
+		console.log(error);
+		return response.status(500).json({ message: "Error deleting post please contact site adminstrator" });
+	}
+};
+
+const postMethodOverride = async (request, response) => {
+	try {
+		const fields = await parsePostRequest(request);
+		const method = (fields._method || '').toString().toUpperCase();
+		if (method === 'PUT') {
+			return await updatePostWithFields(request, response, fields);
+		}
+		if (method === 'DELETE') {
+			return await deletePost(request, response);
+		}
+		return response.status(400).json({ message: INVALID_REQUEST_ERROR });
+	} catch (error) {
+		console.log(error);
+		return response.status(500).json({ message: "Error processing request please contact site adminstrator" });
+	}
+};
+
 const image = async (request, response) => {
 	try {
 		const post = await models.post.findOne({ 
@@ -109,9 +228,26 @@ const image = async (request, response) => {
 const post = async (request, response) => {
 	try {
 		const post = await models.post.findOne({ 
-			attributes: ['id', 'post_date', 'cuisine','rating', 'place', 'comments'],
-			where: { id: request.params.id }
+			attributes: [
+				'id',
+				'post_date',
+				'cuisine',
+				'rating',
+				'place',
+				'place_id',
+				'place_secondary_text',
+				'place_latitude',
+				'place_longitude',
+				'comments'
+			],
+			where: { 
+				id: request.params.id,
+				user_id: request.user.id
+			}
 		});
+		if (!post) {
+			return response.status(404).json({ message: 'post not found' });
+		}
 		const data = {
 			id: post.id,
 			post_date: post.post_date,
@@ -119,6 +255,10 @@ const post = async (request, response) => {
 			rating: post.rating,
 			comments: post.comments,
 			place: post.place,
+			place_id: post.place_id,
+			place_secondary_text: post.place_secondary_text,
+			place_latitude: post.place_latitude,
+			place_longitude: post.place_longitude,
 			image_url: '/post/image/' + post.id
 		};
 		response.json(data);
@@ -147,4 +287,4 @@ const post = async (request, response) => {
 // });
 
 
-export  { addPost, image, post};
+export  { addPost, image, post, updatePost, deletePost, postMethodOverride};

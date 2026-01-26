@@ -4,8 +4,9 @@ import { login,token,isAuthorized, addUserToRequest } from '../controllers/auth.
 import { signupStart,signupFinish } from '../controllers/signup.js';
 import { passwordResetStart,passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
 import { info, deleteUserAndPosts } from '../controllers/profile.js';
-import {addPost,image, post } from '../controllers/post.js';
+import {addPost,image, post, updatePost, deletePost, postMethodOverride } from '../controllers/post.js';
 import {search, places } from '../controllers/posts.js';
+import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
 import { privacyPage } from '../controllers/privacy.js';
 
@@ -29,6 +30,8 @@ router.get('/maps/api/place/details/json', proxy('maps.googleapis.com', {
 }));
 
 //non authorized
+router.get('/health', express.json(), health);
+router.get('/version', express.json(), version);
 router.post('/login', express.json(), login);
 router.post('/token', express.json(), token);
 router.post('/signup-finish',express.json(), signupFinish);
@@ -49,7 +52,10 @@ router.post('/password-reset-change', express.json(), isPasswordChangeAuthorized
 router.get('/posts/search', express.json(), isAuthorized, search );
 router.get('/posts/places', express.json(), isAuthorized, places );
 router.post('/post', express.json(), isAuthorized, addPost);
-router.get('/post/:id', express.json(), post);
+router.get('/post/:id', express.json(), isAuthorized, post);
+router.put('/post/:id', express.json(), isAuthorized, updatePost);
+router.delete('/post/:id', express.json(), isAuthorized, deletePost);
+router.post('/post/:id', express.json(), isAuthorized, postMethodOverride);
 router.get('/profile/info', express.json(), isAuthorized, info);
 router.delete('/profile/delete', express.json(), isAuthorized, deleteUserAndPosts);
 
