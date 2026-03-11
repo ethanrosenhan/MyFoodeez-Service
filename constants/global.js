@@ -1,24 +1,23 @@
-//Auth controller
-const TOKEN_SECRET ="GF5JpZGZYJGGIHhnIphb";
-const TOKEN_EXPIRES_IN ="1h";
-const REFRESH_TOKEN_SECRET ="GF5JpZGZYJGGIHhnIphbXXXXXXAFDASDFS";
-const REFRESH_TOKEN_EXPIRES_IN ="1d";
+import { getOptionalEnv, getRequiredEnv } from '../utils/env.js';
 
-//Signup controller
-const SIGNUP_CODE_EXPIRES_IN=5;  /* in minutes */
-const SIGNUP_SUBJECT="Foodeez Email Verification"
+const TOKEN_SECRET = getRequiredEnv('TOKEN_SECRET');
+const TOKEN_EXPIRES_IN = getOptionalEnv('TOKEN_EXPIRES_IN');
+const REFRESH_TOKEN_SECRET = getRequiredEnv('REFRESH_TOKEN_SECRET');
+const REFRESH_TOKEN_EXPIRES_IN = getOptionalEnv('REFRESH_TOKEN_EXPIRES_IN');
 
-//Password reset
-const PASSWORD_RESET_CODE_EXPIRES_IN=15;  /* in minutes */
-const PASSWORD_CHANGE_TOKEN_EXPIRES_IN="15m";
-const INVALID_CREDENTIALS_ERROR="Invalid credentials";
-const INVALID_REQUEST_ERROR="Invalid request";
-const PASSWORD_RESET_SUBJECT="Foodeez Email Verification"
+const SIGNUP_CODE_EXPIRES_IN = 5;
+const SIGNUP_SUBJECT = 'Foodeez Email Verification';
 
-export  { 
-    TOKEN_SECRET, 
+const PASSWORD_RESET_CODE_EXPIRES_IN = 15;
+const PASSWORD_CHANGE_TOKEN_EXPIRES_IN = '15m';
+const INVALID_CREDENTIALS_ERROR = 'Invalid credentials';
+const INVALID_REQUEST_ERROR = 'Invalid request';
+const PASSWORD_RESET_SUBJECT = 'Foodeez Email Verification';
+
+export {
+    TOKEN_SECRET,
     TOKEN_EXPIRES_IN,
-    REFRESH_TOKEN_SECRET, 
+    REFRESH_TOKEN_SECRET,
     REFRESH_TOKEN_EXPIRES_IN,
     SIGNUP_CODE_EXPIRES_IN,
     SIGNUP_SUBJECT,
@@ -27,4 +26,4 @@ export  {
     PASSWORD_RESET_SUBJECT,
     INVALID_CREDENTIALS_ERROR,
     INVALID_REQUEST_ERROR
-}
+};

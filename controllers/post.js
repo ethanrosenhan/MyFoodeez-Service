@@ -1,290 +1,220 @@
-import  sequelize, {models} from '../utils/database.js';
+import sequelize, { models } from '../utils/database.js';
 import * as formidable from 'formidable';
-import Sequelize from 'sequelize';
-const Op = Sequelize.Op;
-import sharp from 'sharp';
-import  { log } from '../lib/log-helper.js';
-import { 
-    INVALID_REQUEST_ERROR
-} from '../constants/global.js';
+import { sendError, sendSuccess } from '../lib/response-helper.js';
+import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 
 const normalizeFields = (fields) => {
-	const normalized = {};
-	if (!fields) {
-		return normalized;
-	}
-	Object.entries(fields).forEach(([key, value]) => {
-		if (Array.isArray(value)) {
-			normalized[key] = value[0];
-		} else {
-			normalized[key] = value;
-		}
-	});
-	return normalized;
+    const normalized = {};
+    if (!fields) {
+        return normalized;
+    }
+    Object.entries(fields).forEach(([key, value]) => {
+        normalized[key] = Array.isArray(value) ? value[0] : value;
+    });
+    return normalized;
 };
 
 const parsePostRequest = async (request) => {
-	const contentType = request.headers['content-type'] || '';
-	if (contentType.includes('application/json')) {
-		return normalizeFields(request.body);
-	}
-	const form = new formidable.IncomingForm();
-	form.keepExtensions = true;
-	const [fields] = await form.parse(request);
-	return normalizeFields(fields);
+    const contentType = request.headers['content-type'] || '';
+    if (contentType.includes('application/json')) {
+        return normalizeFields(request.body);
+    }
+    const form = formidable.default ? new formidable.default.IncomingForm() : new formidable.IncomingForm();
+    form.keepExtensions = true;
+    const [fields] = await form.parse(request);
+    return normalizeFields(fields);
+};
+
+const toNullableString = (value) => {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+};
+
+const parseFieldsToPostValues = (fields, existingPost = null) => {
+    const place = toNullableString(fields.place) || existingPost?.place || 'Unknown';
+    const cuisine = toNullableString(fields.cuisine) || existingPost?.cuisine || 'Unknown';
+    const rating = toNullableString(fields.rating);
+    const comments = typeof fields.comments === 'string' ? fields.comments.trim() : existingPost?.comments || '';
+
+    return {
+        place,
+        place_id: toNullableString(fields.place_id),
+        place_secondary_text: toNullableString(fields.place_secondary_text),
+        place_latitude: toNullableString(fields.place_latitude),
+        place_longitude: toNullableString(fields.place_longitude),
+        cuisine,
+        rating,
+        comments
+    };
+};
+
+const attachImageIfProvided = (fields, values) => {
+    if (fields.file && fields.file !== 'null') {
+        values.image_data = Buffer.from(fields.file, 'base64');
+        values.image_type = 'image/png';
+        values.image_name = 'meal.png';
+    }
 };
 
 const addPost = async (request, response) => {
-	try {
-		const fields = await parsePostRequest(request);
-		const place = fields['place'] ? fields['place'] : 'Unknown';
-		const place_id = fields['place_id'] ? fields['place_id'] : null;
-		const place_secondary_text = fields['place_secondary_text'] ? fields['place_secondary_text'] : null;
-		const place_latitude = fields['place_latitude'] ? fields['place_latitude'] : null;
-		const place_longitude = fields['place_longitude'] ? fields['place_longitude'] : null;
+    try {
+        const fields = await parsePostRequest(request);
+        const values = parseFieldsToPostValues(fields);
+        attachImageIfProvided(fields, values);
 
-		const cuisine = fields['cuisine'] ? fields['cuisine'] : 'Unknown';
-		const rating = fields['rating'] ? fields['rating'] : '';
-		const comments = fields['comments'] ? fields['comments'] : '';
-		const file = fields['file'] ? fields['file'] : null;
-		//TODO: collect image type and size from the client
+        const post = await models.post.create({
+            ...values,
+            post_date: new Date(),
+            is_private: true,
+            user_id: request.user.id
+        });
 
-		let raw_image = null;
-		// if (!file || file === 'null') {
-		// 	return response.status(400).json({message: INVALID_REQUEST_ERROR});
-		// }
-		if (file && file !== 'null') {
+        return sendSuccess(response, 201, { id: post.id });
+    } catch (error) {
+        console.error('addPost failed', error);
+        return sendError(response, 500, 'Error adding post', 'post_create_failed');
+    }
+};
 
-			raw_image =Buffer.from(file, "base64");
-
-		}
-	
-		// const thumbnail_image = await sharp(raw_image).rotate()
-		// 			.resize({
-		// 				//fit: sharp.fit.contain,
-		// 				fit: sharp.fit.inside,
-		// 				width: 1080
-		// 			})
-		// 			.jpeg({ mozjpeg: true })
-		// 			.toBuffer();
-
-		const imageType = 'image/png';
-		const imageName = 'Unknown';
-		const post = await models.post.create(({
-		   
-			place: place,
-			place_id: place_id,
-			place_secondary_text: place_secondary_text,
-			place_latitude: place_latitude,
-			place_longitude: place_longitude,
-			post_date: new Date(),
-			cuisine: cuisine,
-			rating: rating,
-			image_type:  imageType,
-			image_name: imageName,
-			comments: comments,
-			image_data: raw_image || null,
-			// image_thumbnail: thumbnail_image,
-			is_private: true,
-			user_id: request.user.id
-		}));
-
-		return response.status(201).json({
-			id: post.id
-			//image: post.image_data.toString('base64')
-		});
-
-	} catch (error) {
-			console.log(error);
-			return response.status(500).json({ message: "Error adding post please contact site adminstrator" });
-	}
-
-}
+const findOwnedPost = async (request) => {
+    return models.post.findOne({
+        where: {
+            id: request.params.id,
+            user_id: request.user.id
+        }
+    });
+};
 
 const updatePostWithFields = async (request, response, fields) => {
-	const updates = {};
-	const updatableFields = [
-		'place',
-		'place_id',
-		'place_secondary_text',
-		'place_latitude',
-		'place_longitude',
-		'cuisine',
-		'rating',
-		'comments'
-	];
+    const post = await findOwnedPost(request);
+    if (!post) {
+        return sendError(response, 404, 'Post not found', 'post_not_found');
+    }
 
-	updatableFields.forEach((field) => {
-		if (fields[field] !== undefined) {
-			updates[field] = fields[field];
-		}
-	});
+    const updates = parseFieldsToPostValues(fields, post);
+    attachImageIfProvided(fields, updates);
 
-	if (fields.file && fields.file !== 'null') {
-		updates.image_data = Buffer.from(fields.file, 'base64');
-		updates.image_type = 'image/png';
-		updates.image_name = 'Unknown';
-	}
-
-	if (Object.keys(updates).length === 0) {
-		return response.status(400).json({ message: INVALID_REQUEST_ERROR });
-	}
-
-	const post = await models.post.findOne({
-		where: {
-			id: request.params.id,
-			user_id: request.user.id
-		}
-	});
-
-	if (!post) {
-		return response.status(404).json({ message: 'post not found' });
-	}
-
-	await post.update(updates);
-
-	return response.status(200).json({
-		id: post.id,
-		updated: true
-	});
+    await post.update(updates);
+    return sendSuccess(response, 200, { id: post.id, updated: true });
 };
 
 const updatePost = async (request, response) => {
-	try {
-		const fields = await parsePostRequest(request);
-		return await updatePostWithFields(request, response, fields);
-	} catch (error) {
-		console.log(error);
-		return response.status(500).json({ message: "Error updating post please contact site adminstrator" });
-	}
+    try {
+        const fields = await parsePostRequest(request);
+        return await updatePostWithFields(request, response, fields);
+    } catch (error) {
+        console.error('updatePost failed', error);
+        return sendError(response, 500, 'Error updating post', 'post_update_failed');
+    }
 };
 
 const deletePost = async (request, response) => {
-	try {
-		const post = await models.post.findOne({
-			where: {
-				id: request.params.id,
-				user_id: request.user.id
-			}
-		});
+    try {
+        const post = await findOwnedPost(request);
+        if (!post) {
+            return sendError(response, 404, 'Post not found', 'post_not_found');
+        }
 
-		if (!post) {
-			return response.status(404).json({ message: 'post not found' });
-		}
-
-		await post.destroy();
-		return response.status(200).json({ deleted: true });
-	} catch (error) {
-		console.log(error);
-		return response.status(500).json({ message: "Error deleting post please contact site adminstrator" });
-	}
+        await post.destroy();
+        return sendSuccess(response, 200, { deleted: true });
+    } catch (error) {
+        console.error('deletePost failed', error);
+        return sendError(response, 500, 'Error deleting post', 'post_delete_failed');
+    }
 };
 
 const postMethodOverride = async (request, response) => {
-	try {
-		const fields = await parsePostRequest(request);
-		const method = (fields._method || '').toString().toUpperCase();
-		if (method === 'PUT') {
-			return await updatePostWithFields(request, response, fields);
-		}
-		if (method === 'DELETE') {
-			return await deletePost(request, response);
-		}
-		return response.status(400).json({ message: INVALID_REQUEST_ERROR });
-	} catch (error) {
-		console.log(error);
-		return response.status(500).json({ message: "Error processing request please contact site adminstrator" });
-	}
+    try {
+        const fields = await parsePostRequest(request);
+        const method = (fields._method || '').toString().toUpperCase();
+        if (method === 'PUT') {
+            return await updatePostWithFields(request, response, fields);
+        }
+        if (method === 'DELETE') {
+            return await deletePost(request, response);
+        }
+        return sendError(response, 400, INVALID_REQUEST_ERROR, 'invalid_request');
+    } catch (error) {
+        console.error('postMethodOverride failed', error);
+        return sendError(response, 500, 'Error processing request', 'post_override_failed');
+    }
 };
 
 const image = async (request, response) => {
-	try {
-		const post = await models.post.findOne({ 
-			attributes: ['image_data'],
-			where: { id: request.params.id }
-		});
+    try {
+        const post = await models.post.findOne({
+            attributes: ['id', 'image_data'],
+            where: {
+                id: request.params.id,
+                user_id: request.user.id
+            }
+        });
 
-		if (post.image_data && post.image_data.length > 0) {
+        if (!post) {
+            return sendError(response, 404, 'Post not found', 'post_not_found');
+        }
 
-			response.writeHead(200, {
-			'Content-Type': 'image/png',
-			'Content-Length': post.image_data.length
-			});
+        if (!post.image_data || post.image_data.length === 0) {
+            return response.status(204).send();
+        }
 
-			const img = Buffer.from(post.image_data, 'base64');
+        response.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Content-Length': post.image_data.length
+        });
 
-			response.end(img);
-		} else {
-			return response.send("");
-		}
+        return response.end(Buffer.from(post.image_data));
+    } catch (error) {
+        console.error('image fetch failed', error);
+        return sendError(response, 500, 'Error loading image', 'post_image_failed');
+    }
+};
 
-	} catch (error) {
-		console.log(error);
-		return response.status(500).json({ message: "Error please contact site adminstrator" });
-	}
-
-
-}
 const post = async (request, response) => {
-	try {
-		const post = await models.post.findOne({ 
-			attributes: [
-				'id',
-				'post_date',
-				'cuisine',
-				'rating',
-				'place',
-				'place_id',
-				'place_secondary_text',
-				'place_latitude',
-				'place_longitude',
-				'comments'
-			],
-			where: { 
-				id: request.params.id,
-				user_id: request.user.id
-			}
-		});
-		if (!post) {
-			return response.status(404).json({ message: 'post not found' });
-		}
-		const data = {
-			id: post.id,
-			post_date: post.post_date,
-			cuisine: post.cuisine,
-			rating: post.rating,
-			comments: post.comments,
-			place: post.place,
-			place_id: post.place_id,
-			place_secondary_text: post.place_secondary_text,
-			place_latitude: post.place_latitude,
-			place_longitude: post.place_longitude,
-			image_url: '/post/image/' + post.id
-		};
-		response.json(data);
+    try {
+        const postRecord = await models.post.findOne({
+            attributes: [
+                'id',
+                'post_date',
+                'cuisine',
+                'rating',
+                'place',
+                'place_id',
+                'place_secondary_text',
+                'place_latitude',
+                'place_longitude',
+                'comments'
+            ],
+            where: {
+                id: request.params.id,
+                user_id: request.user.id
+            }
+        });
 
-	} catch (error) {
-		console.log(error);
-		return response.status(500).json({ message: "Error please contact site adminstrator" });
-	}
+        if (!postRecord) {
+            return sendError(response, 404, 'Post not found', 'post_not_found');
+        }
 
-	
-}
+        return sendSuccess(response, 200, {
+            id: postRecord.id,
+            post_date: postRecord.post_date,
+            cuisine: postRecord.cuisine,
+            rating: postRecord.rating,
+            comments: postRecord.comments,
+            place: postRecord.place,
+            place_id: postRecord.place_id,
+            place_secondary_text: postRecord.place_secondary_text,
+            place_latitude: postRecord.place_latitude,
+            place_longitude: postRecord.place_longitude,
+            image_url: `/post/image/${postRecord.id}`
+        });
+    } catch (error) {
+        console.error('post fetch failed', error);
+        return sendError(response, 500, 'Error loading post', 'post_fetch_failed');
+    }
+};
 
-
-
-
-
-// server.get("/api/id/:w", function(req, res) {
-//     var data = getIcon(req.params.w);
-//     var img = Buffer.from(data, 'base64');
-
-//    res.writeHead(200, {
-//      'Content-Type': 'image/png',
-//      'Content-Length': img.length
-//    });
-//    res.end(img); 
-// });
-
-
-export  { addPost, image, post, updatePost, deletePost, postMethodOverride};
+export { addPost, image, post, updatePost, deletePost, postMethodOverride };

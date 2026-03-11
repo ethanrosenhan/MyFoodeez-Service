@@ -1,166 +1,141 @@
-
-
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Sequelize } from 'sequelize';
 import { models } from '../utils/database.js';
-import  { log } from '../lib/log-helper.js';
-import { 
-    TOKEN_SECRET, 
+import { log } from '../lib/log-helper.js';
+import { sendError, sendSuccess } from '../lib/response-helper.js';
+import {
+    TOKEN_SECRET,
     TOKEN_EXPIRES_IN,
-    REFRESH_TOKEN_SECRET, 
+    REFRESH_TOKEN_SECRET,
     REFRESH_TOKEN_EXPIRES_IN,
     INVALID_CREDENTIALS_ERROR,
     INVALID_REQUEST_ERROR
 } from '../constants/global.js';
 
-const buildToken = (email)=> {
-    return jwt.sign({ email: email}, TOKEN_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
-}
+const buildToken = (email) => {
+    return jwt.sign({ email }, TOKEN_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
+};
 
-const buildRefreshToken = (email)=> {
-    return jwt.sign({ email: email}, REFRESH_TOKEN_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
-}
+const buildRefreshToken = (email) => {
+    return jwt.sign({ email }, REFRESH_TOKEN_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
+};
+
+const getUserByEmail = async (email) => {
+    return models.user.findOne({
+        where: Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')), email.toLowerCase())
+    });
+};
+
 const addUserToRequest = async (req, res, next) => {
     try {
-        const authHeader = req.get("Authorization");
-        if (authHeader) {
-            const token = authHeader.split(' ')[1];
-            const decodedToken = jwt.verify(token, TOKEN_SECRET);
-            if (decodedToken) {
-                const user = await models.user.findOne({ where : { email: decodedToken.email }});
-                if (!user) {
-                    return res.status(401).json({ message: 'unauthorized' });
-                }
-                req.user = user.dataValues;
-            };
+        const authHeader = req.get('Authorization');
+        if (!authHeader) {
+            return next();
+        }
+
+        const token = authHeader.split(' ')[1];
+        const decodedToken = jwt.verify(token, TOKEN_SECRET);
+        const user = await getUserByEmail(decodedToken.email);
+        if (user) {
+            req.user = user.dataValues;
         }
     } catch (error) {
-        console.log(error);
+        console.warn('Unable to attach user to request', error.message);
     }
 
     next();
 };
 
 const isAuthorized = async (req, res, next) => {
-    const authHeader = req.get("Authorization");
-
+    const authHeader = req.get('Authorization');
     if (!authHeader) {
-        return res.status(401).json({ message: 'not authorized' });
-    };
-    const token = authHeader.split(' ')[1];
-    let decodedToken;
-    try {
-        decodedToken = jwt.verify(token, TOKEN_SECRET);
-    } catch (error) {
-        console.log(error);
-        return res.status(401).json({ message: 'not authorized' });
-    };
-
-    if (!decodedToken)
-        return res.status(401).json({ message: 'not authorized' });
-
-    const user = await models.user.findOne({ where : Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')),decodedToken.email.toLowerCase())});
-
-    if (!user) {
-        return res.status(401).json({ message: 'not authorized' });
+        return sendError(res, 401, 'Not authorized', 'not_authorized');
     }
-    req.user = user.dataValues;
-    req.decodedToken = decodedToken;
-    next();
-    
+
+    try {
+        const token = authHeader.split(' ')[1];
+        const decodedToken = jwt.verify(token, TOKEN_SECRET);
+        const user = await getUserByEmail(decodedToken.email);
+
+        if (!user) {
+            return sendError(res, 401, 'Not authorized', 'not_authorized');
+        }
+
+        req.user = user.dataValues;
+        req.decodedToken = decodedToken;
+        return next();
+    } catch (error) {
+        return sendError(res, 401, 'Not authorized', 'not_authorized');
+    }
 };
 
 const login = async (req, res) => {
+    const email = req.body?.email?.trim();
+    const password = req.body?.password;
 
-    log(req, '/login',  {  email: req.body.email });
+    log(req, '/login', { email });
 
-    if (!req.body.email) {
-        log(req, '/login',  { error: "missing email in the request body" });
-        return res.status(401).json({message: INVALID_CREDENTIALS_ERROR});
-    }
-    if (!req.body.password) {
-        log(req, '/login',  { error: "missing password in the request body" });
-        return res.status(401).json({message: INVALID_CREDENTIALS_ERROR});
+    if (!email || !password) {
+        return sendError(res, 400, INVALID_REQUEST_ERROR, 'invalid_request');
     }
 
     try {
-        const dbUser = await models.user.findOne({ where : Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')),req.body.email.toLowerCase())});
-        if (!dbUser) {
-            log(req, '/login',  { error: "user not found" });
-            return res.status(404).json({message: INVALID_CREDENTIALS_ERROR});
-        } else {
-            bcrypt.compare(req.body.password, dbUser.password, async (err, compareRes) => {
-                if (err) {
-                    log(req, '/login',  { error: "error while checking user password" });
-                    return res.status(502).json({message: INVALID_CREDENTIALS_ERROR});
-                } else if (compareRes) { // password match
-                    const token = buildToken(req.body.email);
-                    const refreshToken = buildRefreshToken(req.body.email);
-                    const decodedRefreshToken = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+        const dbUser = await getUserByEmail(email);
+        if (!dbUser || !dbUser.password) {
+            return sendError(res, 401, INVALID_CREDENTIALS_ERROR, 'invalid_credentials');
+        }
 
-                    console.log(decodedRefreshToken);
-                    await models.refresh_token.create(({
-                        token: refreshToken,
-                        data: decodedRefreshToken
-                    }));
+        const matches = await bcrypt.compare(password, dbUser.password);
+        if (!matches) {
+            return sendError(res, 401, INVALID_CREDENTIALS_ERROR, 'invalid_credentials');
+        }
 
-                    const response = {
-                        "status": "Logged in",
-                        "token": token,
-                        "refreshToken": refreshToken,
-                    }
+        const token = buildToken(email);
+        const refreshToken = buildRefreshToken(email);
+        const decodedRefreshToken = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
 
-                    return res.status(200).json(response);
-                } else {
-                    return res.status(401).json({message: INVALID_CREDENTIALS_ERROR});
-                };
-            });
-        };
-    } catch (err) {
-        log(req, '/login',  { error: err.message });
-        console.log('error', err);
+        await models.refresh_token.create({
+            token: refreshToken,
+            data: decodedRefreshToken
+        });
+
+        return sendSuccess(res, 200, {
+            status: 'Logged in',
+            token,
+            refreshToken
+        });
+    } catch (error) {
+        log(req, '/login', { error: error.message });
+        return sendError(res, 500, 'Unable to login', 'login_failed');
     }
-
 };
 
 const token = async (req, res) => {
-    const postData = req.body
+    const refreshToken = req.body?.refreshToken;
+    log(req, '/token', { hasRefreshToken: Boolean(refreshToken) });
 
-    log(req, '/token',  {  refreshToken: postData.refreshToken });
-    const refresh_token = await models.refresh_token.findOne({ where : { token: postData.refreshToken}});
-
-    if (!refresh_token) {
-        console.log("missing refresh_token token in db");
-
-        return res.status(404).json({ message: INVALID_REQUEST_ERROR });
+    if (!refreshToken) {
+        return sendError(res, 400, INVALID_REQUEST_ERROR, 'invalid_request');
     }
 
-    let decodedRefreshToken;
     try {
-        decodedRefreshToken = jwt.verify(postData.refreshToken, REFRESH_TOKEN_SECRET);
+        const savedRefreshToken = await models.refresh_token.findOne({ where: { token: refreshToken } });
+        if (!savedRefreshToken) {
+            return sendError(res, 404, INVALID_REQUEST_ERROR, 'invalid_request');
+        }
+
+        const decodedRefreshToken = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+        const dbUser = await getUserByEmail(decodedRefreshToken.email);
+        if (!dbUser) {
+            return sendError(res, 404, INVALID_REQUEST_ERROR, 'invalid_request');
+        }
+
+        const nextToken = buildToken(decodedRefreshToken.email);
+        return sendSuccess(res, 200, { token: nextToken });
     } catch (error) {
-        console.log(error);
-        return res.status(404).json({ message: INVALID_REQUEST_ERROR });
-    };
-
-    if (!decodedRefreshToken){
-        console.log("failed to decode refresh token");
-
-        return res.status(404).json({ message: INVALID_REQUEST_ERROR });
+        return sendError(res, 404, INVALID_REQUEST_ERROR, 'invalid_request');
     }
-     
-    const dbUser = await models.user.findOne({ where : Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')),decodedRefreshToken.email.toLowerCase())});
-    if (!dbUser)
-        return res.status(404).json({ message: INVALID_REQUEST_ERROR });
-
-    const token = buildToken(decodedRefreshToken.email);
-    const response = {
-       "token": token
-    }
-    // update the token in the list
-    res.status(200).json(response);
-
-
 };
-export { login, token, isAuthorized, addUserToRequest };
+
+export { addUserToRequest, isAuthorized, login, token };
