@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import randomstring from 'randomstring';
 import { addMinutes, isAfter } from 'date-fns';
 import EmailValidator from 'email-validator';
+import { Op, Sequelize } from 'sequelize';
 import { getPasswordValidator } from '../lib/password-helper.js';
 import formData from 'form-data';
 import Mailgun from 'mailgun.js';
@@ -22,7 +23,7 @@ const passwordValidator = getPasswordValidator();
 passwordValidator.is().min(8).is().max(100).has().uppercase().has().lowercase().has().digits().has().not().spaces().is().not().oneOf(['Passw0rd', 'Password123']);
 
 const signupStart = async (req, res) => {
-    const email = req.body?.email?.trim();
+    const email = req.body?.email?.trim()?.toLowerCase();
     log(req, '/signup-start', { email });
 
     try {
@@ -34,7 +35,9 @@ const signupStart = async (req, res) => {
             return sendError(res, 400, INVALID_EMAIL_ERROR, 'invalid_email');
         }
 
-        const existingUser = await models.user.findOne({ where: { email } });
+        const existingUser = await models.user.findOne({
+            where: Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')), email)
+        });
         if (existingUser) {
             return sendError(res, 409, USER_ALREADY_EXISTS_ERROR, 'user_exists');
         }
@@ -76,15 +79,25 @@ const signupStart = async (req, res) => {
 };
 
 const signupFinish = async (req, res) => {
+    const email = req.body?.email?.trim()?.toLowerCase();
     const code = req.body?.code?.trim();
-    log(req, '/signup-finish', { code });
+    log(req, '/signup-finish', { email, code });
 
     try {
         if (!code) {
             return sendError(res, 400, INVALID_REQUEST_ERROR, 'invalid_request');
         }
 
-        const signup = await models.signup.findOne({ where: { code } });
+        const signup = await models.signup.findOne({
+            where: email
+                ? {
+                    [Op.and]: [
+                        { code },
+                        Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')), email)
+                    ]
+                }
+                : { code }
+        });
         if (!signup) {
             return sendError(res, 409, INVALID_CODE_ERROR, 'invalid_code');
         }
@@ -93,7 +106,9 @@ const signupFinish = async (req, res) => {
             return sendError(res, 409, EXPIRED_CODE_ERROR, 'expired_code');
         }
 
-        const existingUser = await models.user.findOne({ where: { email: signup.email } });
+        const existingUser = await models.user.findOne({
+            where: Sequelize.where(Sequelize.fn('lower', Sequelize.col('email')), signup.email.toLowerCase())
+        });
         if (existingUser) {
             return sendError(res, 409, USER_ALREADY_EXISTS_ERROR, 'user_exists');
         }
@@ -104,6 +119,7 @@ const signupFinish = async (req, res) => {
             last_name: signup.last_name,
             password: signup.password
         });
+        await signup.destroy();
 
         return sendSuccess(res, 200, { message: 'User has been created' });
     } catch (error) {
