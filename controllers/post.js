@@ -75,7 +75,7 @@ const addPost = async (request, response) => {
         return sendSuccess(response, 201, { id: post.id });
     } catch (error) {
         console.error('addPost failed', error);
-        return sendError(response, 500, 'Error adding post', 'post_create_failed');
+        return sendError(response, 500, `Error adding post: ${error.message}`, 'post_create_failed');
     }
 };
 
@@ -107,7 +107,7 @@ const updatePost = async (request, response) => {
         return await updatePostWithFields(request, response, fields);
     } catch (error) {
         console.error('updatePost failed', error);
-        return sendError(response, 500, 'Error updating post', 'post_update_failed');
+        return sendError(response, 500, `Error updating post: ${error.message}`, 'post_update_failed');
     }
 };
 

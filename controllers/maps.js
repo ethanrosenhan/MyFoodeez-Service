@@ -21,6 +21,14 @@ const pickAllowedParams = (sourceParams, allowedKeys) => {
     return params;
 };
 
+const normalizeDetailsParams = (params) => {
+    if (params.get('placeid') && !params.get('place_id')) {
+        params.set('place_id', params.get('placeid'));
+    }
+    params.delete('placeid');
+    return params;
+};
+
 const proxyGooglePlaces = async (request, response) => {
     const endpoint = SUPPORTED_MAP_PATHS.get(request.path);
     const apiKey = getOptionalEnv('GOOGLE_MAPS_SERVER_API_KEY');
@@ -35,9 +43,11 @@ const proxyGooglePlaces = async (request, response) => {
 
     const allowedParams = endpoint === 'autocomplete'
         ? ['input', 'language', 'location', 'radius', 'sessiontoken', 'components', 'types']
-        : ['place_id', 'language', 'fields', 'sessiontoken'];
+        : ['place_id', 'placeid', 'language', 'fields', 'sessiontoken'];
 
-    const params = pickAllowedParams(request.query, allowedParams);
+    const params = endpoint === 'details'
+        ? normalizeDetailsParams(pickAllowedParams(request.query, allowedParams))
+        : pickAllowedParams(request.query, allowedParams);
     if (endpoint === 'autocomplete' && !params.get('input')) {
         return sendError(response, 400, 'Search input is required', 'invalid_request');
     }
