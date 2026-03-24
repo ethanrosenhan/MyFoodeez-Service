@@ -1,5 +1,5 @@
 import sequelize, { models } from '../utils/database.js';
-import * as formidable from 'formidable';
+import { IncomingForm } from 'formidable';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 
@@ -19,7 +19,7 @@ const parsePostRequest = async (request) => {
     if (contentType.includes('application/json')) {
         return normalizeFields(request.body);
     }
-    const form = formidable.default ? new formidable.default.IncomingForm() : new formidable.IncomingForm();
+    const form = new IncomingForm();
     form.keepExtensions = true;
     const [fields] = await form.parse(request);
     return normalizeFields(fields);
