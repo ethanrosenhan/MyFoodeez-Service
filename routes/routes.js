@@ -13,13 +13,11 @@ import { proxyGooglePlaces } from '../controllers/maps.js';
 import {
     acceptFriendRequest,
     declineFriendRequest,
-    followUser,
     listFriendRequests,
     listFriends,
     removeFriend,
     requestFriend,
-    searchUsers,
-    unfollowUser
+    searchUsers
 } from '../controllers/social.js';
 import { sendError } from '../lib/response-helper.js';
 
@@ -48,8 +46,6 @@ router.post('/friends/requests', isAuthorized, requestFriend);
 router.post('/friends/requests/:id/accept', isAuthorized, acceptFriendRequest);
 router.post('/friends/requests/:id/decline', isAuthorized, declineFriendRequest);
 router.delete('/friends/:userId', isAuthorized, removeFriend);
-router.post('/follows/:userId', isAuthorized, followUser);
-router.delete('/follows/:userId', isAuthorized, unfollowUser);
 
 router.get('/post/image/:id', isAuthorized, image);
 router.get('/posts/search', isAuthorized, search);

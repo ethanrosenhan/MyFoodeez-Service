@@ -2,6 +2,7 @@ import { models } from '../utils/database.js';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import Sequelize from 'sequelize';
+import { FRIENDSHIP_ACCEPTED } from '../lib/social-helper.js';
 
 const Op = Sequelize.Op;
 
@@ -9,9 +10,25 @@ const info = async (request, response) => {
     log(request, '/profile/info', { email: request.user.email });
     try {
         const user = await models.user.findOne({ where: { email: request.user.email } });
+        const [postsCount, friendsCount] = await Promise.all([
+            models.post.count({ where: { user_id: user.id } }),
+            models.friendship.count({
+                where: {
+                    status: FRIENDSHIP_ACCEPTED,
+                    [Op.or]: [
+                        { user_one_id: user.id },
+                        { user_two_id: user.id }
+                    ]
+                }
+            })
+        ]);
         return sendSuccess(response, 200, {
             email: user.email,
-            name: [user.first_name, user.last_name].filter(Boolean).join(' ').trim()
+            name: [user.first_name, user.last_name].filter(Boolean).join(' ').trim(),
+            first_name: user.first_name,
+            last_name: user.last_name,
+            posts_count: postsCount,
+            friends_count: friendsCount
         });
     } catch (error) {
         console.error('profile info failed', error);
@@ -29,14 +46,6 @@ const deleteUserAndPosts = async (request, response) => {
                 [Op.or]: [
                     { user_one_id: request.user.id },
                     { user_two_id: request.user.id }
-                ]
-            }
-        });
-        await models.follow.destroy({
-            where: {
-                [Op.or]: [
-                    { follower_user_id: request.user.id },
-                    { followed_user_id: request.user.id }
                 ]
             }
         });

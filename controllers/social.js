@@ -29,25 +29,15 @@ const getFriendship = async (firstUserId, secondUserId) => {
     });
 };
 
-const getFollow = async (followerUserId, followedUserId) => {
-    return models.follow.findOne({
-        where: { follower_user_id: followerUserId, followed_user_id: followedUserId }
-    });
-};
-
 const relationshipForUser = async (currentUserId, targetUserId) => {
-    const [friendship, following] = await Promise.all([
-        getFriendship(currentUserId, targetUserId),
-        getFollow(currentUserId, targetUserId)
-    ]);
+    const friendship = await getFriendship(currentUserId, targetUserId);
 
     return {
         friendship_status: friendship?.status ?? null,
         friend_request_id: friendship?.id ?? null,
         friend_request_direction: friendship
             ? friendship.requester_user_id === currentUserId ? 'outgoing' : 'incoming'
-            : null,
-        is_following: Boolean(following)
+            : null
     };
 };
 
@@ -117,18 +107,8 @@ const listFriends = async (request, response) => {
             order: [['updated_at', 'DESC']]
         });
 
-        const following = await models.follow.findAll({
-            where: { follower_user_id: request.user.id },
-            include: [{ model: models.user, as: 'followed', attributes: ['id', 'email', 'first_name', 'last_name'] }],
-            order: [['updated_at', 'DESC']]
-        });
-
         return sendSuccess(response, 200, {
-            data: friendships.map((friendship) => serializeFriendship(friendship, request.user.id)),
-            following: following.map((follow) => ({
-                id: follow.id,
-                user: mapUserSummary(follow.followed)
-            }))
+            data: friendships.map((friendship) => serializeFriendship(friendship, request.user.id))
         });
     } catch (error) {
         console.error('friends list failed', error);
@@ -258,54 +238,12 @@ const removeFriend = async (request, response) => {
     }
 };
 
-const followUser = async (request, response) => {
-    const targetUser = await getUserById(request.params.userId);
-    if (!targetUser || targetUser.id === request.user.id) {
-        return sendError(response, 400, 'Invalid follow request', 'invalid_follow_request');
-    }
-
-    try {
-        const [follow] = await models.follow.findOrCreate({
-            where: {
-                follower_user_id: request.user.id,
-                followed_user_id: targetUser.id
-            },
-            defaults: {
-                follower_user_id: request.user.id,
-                followed_user_id: targetUser.id
-            }
-        });
-
-        return sendSuccess(response, 200, { id: follow.id, following: true });
-    } catch (error) {
-        console.error('follow failed', error);
-        return sendError(response, 500, 'Unable to follow user', 'follow_failed');
-    }
-};
-
-const unfollowUser = async (request, response) => {
-    try {
-        await models.follow.destroy({
-            where: {
-                follower_user_id: request.user.id,
-                followed_user_id: Number(request.params.userId)
-            }
-        });
-        return sendSuccess(response, 200, { following: false });
-    } catch (error) {
-        console.error('unfollow failed', error);
-        return sendError(response, 500, 'Unable to unfollow user', 'unfollow_failed');
-    }
-};
-
 export {
     acceptFriendRequest,
     declineFriendRequest,
-    followUser,
     listFriendRequests,
     listFriends,
     removeFriend,
     requestFriend,
-    searchUsers,
-    unfollowUser
+    searchUsers
 };
