@@ -10,6 +10,17 @@ import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
 import { privacyPage } from '../controllers/privacy.js';
 import { proxyGooglePlaces } from '../controllers/maps.js';
+import {
+    acceptFriendRequest,
+    declineFriendRequest,
+    followUser,
+    listFriendRequests,
+    listFriends,
+    removeFriend,
+    requestFriend,
+    searchUsers,
+    unfollowUser
+} from '../controllers/social.js';
 import { sendError } from '../lib/response-helper.js';
 
 const router = express.Router();
@@ -29,6 +40,16 @@ router.get('/privacy', privacyPage);
 
 router.get('/maps/api/place/autocomplete/json', isAuthorized, proxyGooglePlaces);
 router.get('/maps/api/place/details/json', isAuthorized, proxyGooglePlaces);
+
+router.get('/users/search', isAuthorized, searchUsers);
+router.get('/friends', isAuthorized, listFriends);
+router.get('/friends/requests', isAuthorized, listFriendRequests);
+router.post('/friends/requests', isAuthorized, requestFriend);
+router.post('/friends/requests/:id/accept', isAuthorized, acceptFriendRequest);
+router.post('/friends/requests/:id/decline', isAuthorized, declineFriendRequest);
+router.delete('/friends/:userId', isAuthorized, removeFriend);
+router.post('/follows/:userId', isAuthorized, followUser);
+router.delete('/follows/:userId', isAuthorized, unfollowUser);
 
 router.get('/post/image/:id', isAuthorized, image);
 router.get('/posts/search', isAuthorized, search);

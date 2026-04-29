@@ -2,6 +2,7 @@ import sequelize, { models } from '../utils/database.js';
 import { IncomingForm } from 'formidable';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
+import { canViewPostRecord, mapOwnerSummary } from '../lib/social-helper.js';
 
 const normalizeFields = (fields) => {
     const normalized = {};
@@ -33,6 +34,20 @@ const toNullableString = (value) => {
     return trimmed.length > 0 ? trimmed : null;
 };
 
+const parsePrivateFlag = (value, fallback = true) => {
+    if (typeof value !== 'string') {
+        return fallback;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (['false', '0', 'no'].includes(normalized)) {
+        return false;
+    }
+    if (['true', '1', 'yes'].includes(normalized)) {
+        return true;
+    }
+    return fallback;
+};
+
 const parseFieldsToPostValues = (fields, existingPost = null) => {
     const place = toNullableString(fields.place) || existingPost?.place || 'Unknown';
     const cuisine = toNullableString(fields.cuisine) || existingPost?.cuisine || 'Unknown';
@@ -47,7 +62,8 @@ const parseFieldsToPostValues = (fields, existingPost = null) => {
         place_longitude: toNullableString(fields.place_longitude),
         cuisine,
         rating,
-        comments
+        comments,
+        is_private: parsePrivateFlag(fields.is_private, existingPost?.is_private ?? true)
     };
 };
 
@@ -68,7 +84,6 @@ const addPost = async (request, response) => {
         const post = await models.post.create({
             ...values,
             post_date: new Date(),
-            is_private: true,
             user_id: request.user.id
         });
 
@@ -146,14 +161,11 @@ const postMethodOverride = async (request, response) => {
 const image = async (request, response) => {
     try {
         const post = await models.post.findOne({
-            attributes: ['id', 'image_data'],
-            where: {
-                id: request.params.id,
-                user_id: request.user.id
-            }
+            attributes: ['id', 'user_id', 'is_private', 'image_data'],
+            where: { id: request.params.id }
         });
 
-        if (!post) {
+        if (!post || !(await canViewPostRecord(request.user.id, post))) {
             return sendError(response, 404, 'Post not found', 'post_not_found');
         }
 
@@ -178,6 +190,7 @@ const post = async (request, response) => {
         const postRecord = await models.post.findOne({
             attributes: [
                 'id',
+                'user_id',
                 'post_date',
                 'cuisine',
                 'rating',
@@ -186,15 +199,14 @@ const post = async (request, response) => {
                 'place_secondary_text',
                 'place_latitude',
                 'place_longitude',
-                'comments'
+                'comments',
+                'is_private'
             ],
-            where: {
-                id: request.params.id,
-                user_id: request.user.id
-            }
+            where: { id: request.params.id },
+            include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }]
         });
 
-        if (!postRecord) {
+        if (!postRecord || !(await canViewPostRecord(request.user.id, postRecord))) {
             return sendError(response, 404, 'Post not found', 'post_not_found');
         }
 
@@ -209,7 +221,10 @@ const post = async (request, response) => {
             place_secondary_text: postRecord.place_secondary_text,
             place_latitude: postRecord.place_latitude,
             place_longitude: postRecord.place_longitude,
-            image_url: `/post/image/${postRecord.id}`
+            image_url: `/post/image/${postRecord.id}`,
+            is_private: postRecord.is_private,
+            is_mine: postRecord.user_id === request.user.id,
+            owner: mapOwnerSummary(postRecord.user)
         });
     } catch (error) {
         console.error('post fetch failed', error);

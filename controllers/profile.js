@@ -1,6 +1,9 @@
 import { models } from '../utils/database.js';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
+import Sequelize from 'sequelize';
+
+const Op = Sequelize.Op;
 
 const info = async (request, response) => {
     log(request, '/profile/info', { email: request.user.email });
@@ -21,6 +24,22 @@ const deleteUserAndPosts = async (request, response) => {
     log(request, '/profile/delete', { email: request.user.email });
     try {
         await models.post.destroy({ where: { user_id: request.user.id } });
+        await models.friendship.destroy({
+            where: {
+                [Op.or]: [
+                    { user_one_id: request.user.id },
+                    { user_two_id: request.user.id }
+                ]
+            }
+        });
+        await models.follow.destroy({
+            where: {
+                [Op.or]: [
+                    { follower_user_id: request.user.id },
+                    { followed_user_id: request.user.id }
+                ]
+            }
+        });
         await models.user.destroy({ where: { id: request.user.id } });
 
         return sendSuccess(response, 200, { message: 'User and associated posts deleted successfully.' });
