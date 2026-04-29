@@ -19,26 +19,37 @@ const getUserById = async (id) => {
     return models.user.findByPk(userId);
 };
 
-const getFriendship = async (firstUserId, secondUserId) => {
-    return models.friendship.findOne({
-        where: normalizeFriendPair(firstUserId, secondUserId),
-        include: [
-            { model: models.user, as: 'requester', attributes: ['id', 'email', 'first_name', 'last_name'] },
-            { model: models.user, as: 'addressee', attributes: ['id', 'email', 'first_name', 'last_name'] }
-        ]
-    });
+const buildRelationshipFromFriendship = (friendship, currentUserId) => {
+    if (!friendship) {
+        return {
+            friendship_status: null,
+            friend_request_id: null,
+            friend_request_direction: null
+        };
+    }
+    return {
+        friendship_status: friendship.status,
+        friend_request_id: friendship.id,
+        friend_request_direction: friendship.requester_user_id === currentUserId ? 'outgoing' : 'incoming'
+    };
 };
 
-const relationshipForUser = async (currentUserId, targetUserId) => {
-    const friendship = await getFriendship(currentUserId, targetUserId);
-
-    return {
-        friendship_status: friendship?.status ?? null,
-        friend_request_id: friendship?.id ?? null,
-        friend_request_direction: friendship
-            ? friendship.requester_user_id === currentUserId ? 'outgoing' : 'incoming'
-            : null
-    };
+const loadFriendshipsByPair = async (currentUserId, otherUserIds) => {
+    if (otherUserIds.length === 0) {
+        return new Map();
+    }
+    const pairs = otherUserIds.map((otherId) => normalizeFriendPair(currentUserId, otherId));
+    const friendships = await models.friendship.findAll({
+        where: {
+            [Op.or]: pairs.map(({ user_one_id, user_two_id }) => ({ user_one_id, user_two_id }))
+        }
+    });
+    const friendshipByOtherId = new Map();
+    friendships.forEach((friendship) => {
+        const otherId = friendship.user_one_id === currentUserId ? friendship.user_two_id : friendship.user_one_id;
+        friendshipByOtherId.set(otherId, friendship);
+    });
+    return friendshipByOtherId;
 };
 
 const serializeFriendship = (friendship, currentUserId) => {
@@ -78,10 +89,11 @@ const searchUsers = async (request, response) => {
             order: [['first_name', 'ASC'], ['last_name', 'ASC']]
         });
 
-        const data = await Promise.all(users.map(async (user) => ({
+        const friendshipByOtherId = await loadFriendshipsByPair(request.user.id, users.map((user) => user.id));
+        const data = users.map((user) => ({
             ...mapUserSummary(user),
-            relationship: await relationshipForUser(request.user.id, user.id)
-        })));
+            relationship: buildRelationshipFromFriendship(friendshipByOtherId.get(user.id) ?? null, request.user.id)
+        }));
 
         return sendSuccess(response, 200, { data });
     } catch (error) {
