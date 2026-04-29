@@ -63,7 +63,7 @@ const parseFieldsToPostValues = (fields, existingPost = null) => {
         cuisine,
         rating,
         comments,
-        is_private: parsePrivateFlag(fields.is_private, existingPost?.is_private ?? true)
+        is_private: parsePrivateFlag(fields.is_private, existingPost?.is_private ?? false)
     };
 };
 

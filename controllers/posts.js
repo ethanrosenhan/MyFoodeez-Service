@@ -13,6 +13,7 @@ const mapPostToListItem = (post, requestUserId) => ({
     rating: post.rating,
     place: post.place,
     place_id: post.place_id,
+    place_secondary_text: post.place_secondary_text,
     place_latitude: post.place_latitude,
     place_longitude: post.place_longitude,
     comments: post.comments,
@@ -40,7 +41,7 @@ const search = async (request, response) => {
         log(request, '/posts/search', { page, limit, placeId, scope });
 
         const posts = await models.post.findAll({
-            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'place_id', 'rating', 'place', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
             where: whereClause,
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
             limit,
@@ -82,6 +83,7 @@ const places = async (request, response) => {
                 placesMap[post.place_id] = {
                     place_id: post.place_id,
                     place: post.place,
+                    place_secondary_text: post.place_secondary_text,
                     place_latitude: post.place_latitude,
                     place_longitude: post.place_longitude,
                     post_count: 1,
