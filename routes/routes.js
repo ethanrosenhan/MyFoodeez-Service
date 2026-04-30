@@ -10,6 +10,7 @@ import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
 import { privacyPage } from '../controllers/privacy.js';
 import { proxyGooglePlaces } from '../controllers/maps.js';
+import { sharePostImage, sharePostPage } from '../controllers/share.js';
 import {
     acceptFriendRequest,
     declineFriendRequest,
@@ -35,6 +36,8 @@ router.post('/password-reset-change', isPasswordChangeAuthorized, passwordResetC
 router.get('/support', supportPage);
 router.post('/support/submit', express.urlencoded({ extended: true }), supportSubmit);
 router.get('/privacy', privacyPage);
+router.get('/share/post/:id', sharePostPage);
+router.get('/share/post/:id/image', sharePostImage);
 
 router.get('/maps/api/place/autocomplete/json', isAuthorized, proxyGooglePlaces);
 router.get('/maps/api/place/details/json', isAuthorized, proxyGooglePlaces);
