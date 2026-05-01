@@ -63,10 +63,16 @@ const places = async (request, response) => {
         const limit = parseInt(request.query.limit || 200, 10);
         const offset = (page - 1) * limit;
         const scope = normalizeScope(request.query.scope);
+        const placeName = typeof request.query.placeName === 'string' && request.query.placeName.length > 0
+            ? request.query.placeName
+            : null;
 
-        log(request, '/posts/places', { page, limit, scope });
+        log(request, '/posts/places', { page, limit, scope, placeName });
         const whereClause = await getPostAccessWhere(request.user.id, scope);
         whereClause.place_id = { [Op.not]: null };
+        if (placeName) {
+            whereClause.place = placeName;
+        }
 
         const posts = await models.post.findAll({
             attributes: ['id', 'user_id', 'post_date', 'cuisine', 'rating', 'place', 'place_id', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
@@ -79,6 +85,7 @@ const places = async (request, response) => {
 
         const placesMap = {};
         posts.forEach((post) => {
+            const postIsMine = post.user_id === request.user.id;
             if (!placesMap[post.place_id]) {
                 placesMap[post.place_id] = {
                     place_id: post.place_id,
@@ -87,7 +94,7 @@ const places = async (request, response) => {
                     place_latitude: post.place_latitude,
                     place_longitude: post.place_longitude,
                     post_count: 1,
-                    is_mine: post.user_id === request.user.id,
+                    is_mine: postIsMine,
                     owner: mapOwnerSummary(post.user),
                     latest_post_id: post.id,
                     latest_rating: post.rating,
@@ -96,6 +103,10 @@ const places = async (request, response) => {
                 };
             } else {
                 placesMap[post.place_id].post_count += 1;
+                if (postIsMine && !placesMap[post.place_id].is_mine) {
+                    placesMap[post.place_id].is_mine = true;
+                    placesMap[post.place_id].owner = mapOwnerSummary(post.user);
+                }
             }
         });
 
