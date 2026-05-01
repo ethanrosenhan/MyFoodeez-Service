@@ -5,6 +5,7 @@ import cors from 'cors';
 import ConsoleStamp from 'console-stamp';
 import { getOptionalEnv, validateEnvironment } from './utils/env.js';
 import { sendError } from './lib/response-helper.js';
+import { runStartupMigrations } from './lib/migrations.js';
 
 validateEnvironment();
 
@@ -30,8 +31,8 @@ app.use((error, req, res, next) => {
     return sendError(res, 500, 'Internal server error');
 });
 
-sequelize.sync({ logging: false });
-
 app.listen(PORT, async () => {
+    await sequelize.sync({ logging: false });
+    await runStartupMigrations();
     console.log(`Listening on ${PORT}`);
 });

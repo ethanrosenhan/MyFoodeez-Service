@@ -25,6 +25,28 @@ const mapPostToListItem = (post, requestUserId) => ({
 
 const normalizeScope = (scope) => ['mine', 'friends', 'all'].includes(scope) ? scope : 'mine';
 
+const extractMainText = (place, secondary) => {
+    if (typeof place !== 'string' || place.length === 0) {
+        return '';
+    }
+    if (typeof secondary === 'string' && secondary.length > 0 && place.endsWith(secondary)) {
+        const stripped = place.slice(0, place.length - secondary.length).trim();
+        return stripped.endsWith(',') ? stripped.slice(0, -1).trim() : stripped;
+    }
+    const idx = place.indexOf(',');
+    return (idx >= 0 ? place.slice(0, idx) : place).trim();
+};
+
+const extractRestaurantBaseName = (mainText) => {
+    if (typeof mainText !== 'string' || mainText.length === 0) {
+        return '';
+    }
+    const idx = mainText.indexOf(' - ');
+    return (idx >= 0 ? mainText.slice(0, idx) : mainText).trim();
+};
+
+const escapeLikePattern = (value) => value.replace(/[\\%_]/g, (char) => `\\${char}`);
+
 const search = async (request, response) => {
     try {
         const page = parseInt(request.query.page || 1, 10);
@@ -66,16 +88,32 @@ const places = async (request, response) => {
         const placeName = typeof request.query.placeName === 'string' && request.query.placeName.length > 0
             ? request.query.placeName
             : null;
+        const placeSecondaryText = typeof request.query.placeSecondaryText === 'string' && request.query.placeSecondaryText.length > 0
+            ? request.query.placeSecondaryText
+            : null;
 
-        log(request, '/posts/places', { page, limit, scope, placeName });
+        const baseName = placeName
+            ? extractRestaurantBaseName(extractMainText(placeName, placeSecondaryText))
+            : null;
+
+        log(request, '/posts/places', { page, limit, scope, placeName, baseName });
         const whereClause = await getPostAccessWhere(request.user.id, scope);
         whereClause.place_id = { [Op.not]: null };
-        if (placeName) {
+        if (baseName) {
+            const escapedBase = escapeLikePattern(baseName);
+            whereClause.place = {
+                [Op.or]: [
+                    baseName,
+                    { [Op.like]: `${escapedBase},%` },
+                    { [Op.like]: `${escapedBase} -%` }
+                ]
+            };
+        } else if (placeName) {
             whereClause.place = placeName;
         }
 
         const posts = await models.post.findAll({
-            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'rating', 'place', 'place_id', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'rating', 'place', 'place_id', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
             where: whereClause,
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
             limit,
@@ -83,8 +121,12 @@ const places = async (request, response) => {
             order: [['post_date', 'DESC']]
         });
 
+        const filteredPosts = baseName
+            ? posts.filter((post) => extractRestaurantBaseName(extractMainText(post.place, post.place_secondary_text)).toLowerCase() === baseName.toLowerCase())
+            : posts;
+
         const placesMap = {};
-        posts.forEach((post) => {
+        filteredPosts.forEach((post) => {
             const postIsMine = post.user_id === request.user.id;
             if (!placesMap[post.place_id]) {
                 placesMap[post.place_id] = {
