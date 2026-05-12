@@ -1,5 +1,6 @@
 import { Sequelize } from 'sequelize';
 import post from '../models/post.js'
+import post_image from '../models/post_image.js'
 import user from '../models/user.js'
 import audit from '../models/audit.js'
 import signup from '../models/signup.js'
@@ -26,6 +27,7 @@ if (process.env.DATABASE_USE_SSL && process.env.DATABASE_USE_SSL === 'false') {
 const sequelize = new Sequelize(process.env.DATABASE_URL, dboptions);
 const modelDefiners = [
 	post,
+    post_image,
     user,
     audit,
     signup,

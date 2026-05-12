@@ -13,8 +13,8 @@ const optionalEnvironmentVariables = {
     GOOGLE_MAPS_SERVER_API_KEY: '',
     SERVICE_NAME: 'myfoodeez-service',
     CORS_ORIGIN: '*',
-    TOKEN_EXPIRES_IN: '1h',
-    REFRESH_TOKEN_EXPIRES_IN: '1d'
+    TOKEN_EXPIRES_IN: '30d',
+    REFRESH_TOKEN_EXPIRES_IN: '365d'
 };
 
 const getEnv = (name, fallback = undefined) => {

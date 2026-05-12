@@ -26,6 +26,14 @@ export default (sequelize) => {
         image: {
             type: Sequelize.STRING,
             allowNull: true,
+        },
+        profile_image_data: {
+            type: Sequelize.BLOB('long'),
+            allowNull: true,
+        },
+        profile_image_type: {
+            type: Sequelize.STRING,
+            allowNull: true,
         }
     }, {
         updatedAt: 'updated_at',

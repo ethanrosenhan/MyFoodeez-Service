@@ -3,8 +3,8 @@ import express from 'express';
 import { login, token, isAuthorized } from '../controllers/auth.js';
 import { signupStart, signupFinish } from '../controllers/signup.js';
 import { passwordResetStart, passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
-import { info, deleteUserAndPosts } from '../controllers/profile.js';
-import { addPost, image, post, updatePost, deletePost, postMethodOverride } from '../controllers/post.js';
+import { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts } from '../controllers/profile.js';
+import { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride } from '../controllers/post.js';
 import { search, places } from '../controllers/posts.js';
 import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
@@ -51,6 +51,7 @@ router.post('/friends/requests/:id/decline', isAuthorized, declineFriendRequest)
 router.delete('/friends/:userId', isAuthorized, removeFriend);
 
 router.get('/post/image/:id', isAuthorized, image);
+router.get('/post/:id/image/:index', isAuthorized, imageAtIndex);
 router.get('/posts/search', isAuthorized, search);
 router.get('/posts/places', isAuthorized, places);
 router.post('/post', isAuthorized, addPost);
@@ -59,6 +60,9 @@ router.put('/post/:id', isAuthorized, updatePost);
 router.delete('/post/:id', isAuthorized, deletePost);
 router.post('/post/:id', isAuthorized, postMethodOverride);
 router.get('/profile/info', isAuthorized, info);
+router.post('/profile/image', isAuthorized, uploadProfileImage);
+router.delete('/profile/image', isAuthorized, deleteProfileImage);
+router.get('/profile/image/:userId', isAuthorized, getProfileImage);
 router.delete('/profile/delete', isAuthorized, deleteUserAndPosts);
 
 router.use('/', (req, res) => {

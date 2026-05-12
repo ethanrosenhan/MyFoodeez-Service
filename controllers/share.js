@@ -54,6 +54,14 @@ const sharePostPage = async (request, response) => {
             return response.status(404).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Not found</title></head><body style="font-family: Arial, sans-serif; padding: 32px; text-align: center;"><h1>Post not available</h1><p>This review may be private or no longer exists.</p></body></html>`);
         }
 
+        const firstImage = await models.post_image.findOne({
+            attributes: ['id', 'image_data'],
+            where: { post_id: post.id },
+            order: [['sort_order', 'ASC'], ['id', 'ASC']]
+        });
+        const hasShareableImage = (firstImage && firstImage.image_data && firstImage.image_data.length > 0)
+            || (post.image_data && post.image_data.length > 0);
+
         const ownerName = getOwnerName(post.user);
         const place = post.place || 'a restaurant';
         const cuisine = post.cuisine && post.cuisine !== 'Unknown' ? post.cuisine : '';
@@ -63,7 +71,7 @@ const sharePostPage = async (request, response) => {
         const summary = buildPlainTextSummary(post, ownerName);
         const baseUrl = `${request.protocol}://${request.get('host')}`;
         const canonicalUrl = `${baseUrl}/share/post/${post.id}`;
-        const imageUrl = post.image_data && post.image_data.length > 0 ? `${baseUrl}/share/post/${post.id}/image` : '';
+        const imageUrl = hasShareableImage ? `${baseUrl}/share/post/${post.id}/image` : '';
         const appDeepLink = `myfoodeez://posts/${post.id}`;
 
         const safe = {
@@ -153,15 +161,33 @@ const sharePostPage = async (request, response) => {
 const sharePostImage = async (request, response) => {
     try {
         const post = await models.post.findOne({
-            attributes: ['id', 'is_private', 'image_data'],
+            attributes: ['id', 'is_private', 'image_data', 'image_type'],
             where: { id: request.params.id }
         });
-        if (!post || post.is_private || !post.image_data || post.image_data.length === 0) {
+        if (!post || post.is_private) {
+            return response.status(404).send();
+        }
+
+        const firstImage = await models.post_image.findOne({
+            where: { post_id: post.id },
+            order: [['sort_order', 'ASC'], ['id', 'ASC']]
+        });
+
+        if (firstImage && firstImage.image_data && firstImage.image_data.length > 0) {
+            response.writeHead(200, {
+                'Content-Type': firstImage.image_type || 'image/png',
+                'Content-Length': firstImage.image_data.length,
+                'Cache-Control': 'public, max-age=300'
+            });
+            return response.end(Buffer.from(firstImage.image_data));
+        }
+
+        if (!post.image_data || post.image_data.length === 0) {
             return response.status(404).send();
         }
 
         response.writeHead(200, {
-            'Content-Type': 'image/png',
+            'Content-Type': post.image_type || 'image/png',
             'Content-Length': post.image_data.length,
             'Cache-Control': 'public, max-age=300'
         });

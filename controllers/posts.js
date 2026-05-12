@@ -6,22 +6,50 @@ import { getPostAccessWhere, mapOwnerSummary } from '../lib/social-helper.js';
 
 const Op = Sequelize.Op;
 
-const mapPostToListItem = (post, requestUserId) => ({
-    id: post.id,
-    post_date: post.post_date,
-    cuisine: post.cuisine,
-    rating: post.rating,
-    place: post.place,
-    place_id: post.place_id,
-    place_secondary_text: post.place_secondary_text,
-    place_latitude: post.place_latitude,
-    place_longitude: post.place_longitude,
-    comments: post.comments,
-    image_url: `/post/image/${post.id}`,
-    is_private: post.is_private,
-    is_mine: post.user_id === requestUserId,
-    owner: mapOwnerSummary(post.user)
-});
+const buildPostImageUrls = (postId, imageCount) => {
+    if (imageCount > 0) {
+        return Array.from({ length: imageCount }, (_, idx) => `/post/${postId}/image/${idx}`);
+    }
+    return [`/post/image/${postId}`];
+};
+
+const mapPostToListItem = (post, requestUserId, imageCount) => {
+    const imageUrls = buildPostImageUrls(post.id, imageCount);
+    return {
+        id: post.id,
+        post_date: post.post_date,
+        cuisine: post.cuisine,
+        rating: post.rating,
+        place: post.place,
+        place_id: post.place_id,
+        place_secondary_text: post.place_secondary_text,
+        place_latitude: post.place_latitude,
+        place_longitude: post.place_longitude,
+        comments: post.comments,
+        image_url: imageUrls[0] || null,
+        image_urls: imageUrls,
+        is_private: post.is_private,
+        is_mine: post.user_id === requestUserId,
+        owner: mapOwnerSummary(post.user)
+    };
+};
+
+const loadImageCountsForPosts = async (postIds) => {
+    if (postIds.length === 0) {
+        return new Map();
+    }
+    const rows = await models.post_image.findAll({
+        attributes: ['post_id', [Sequelize.fn('COUNT', Sequelize.col('id')), 'image_count']],
+        where: { post_id: { [Op.in]: postIds } },
+        group: ['post_id'],
+        raw: true
+    });
+    const map = new Map();
+    rows.forEach((row) => {
+        map.set(Number(row.post_id), Number(row.image_count));
+    });
+    return map;
+};
 
 const normalizeScope = (scope) => ['mine', 'friends', 'all'].includes(scope) ? scope : 'mine';
 
@@ -71,7 +99,11 @@ const search = async (request, response) => {
             order: [['post_date', 'DESC']]
         });
 
-        return sendSuccess(response, 200, { data: posts.map((post) => mapPostToListItem(post, request.user.id)) });
+        const imageCounts = await loadImageCountsForPosts(posts.map((p) => p.id));
+
+        return sendSuccess(response, 200, {
+            data: posts.map((post) => mapPostToListItem(post, request.user.id, imageCounts.get(post.id) || 0))
+        });
     } catch (error) {
         console.error('search posts failed', error);
         log(request, '/posts/search', { error: error.message });

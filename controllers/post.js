@@ -4,6 +4,8 @@ import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 import { canViewPostRecord, mapOwnerSummary } from '../lib/social-helper.js';
 
+const MAX_IMAGES_PER_POST = 5;
+
 const normalizeFields = (fields) => {
     const normalized = {};
     if (!fields) {
@@ -67,25 +69,65 @@ const parseFieldsToPostValues = (fields, existingPost = null) => {
     };
 };
 
-const attachImageIfProvided = (fields, values) => {
+const collectImageBase64s = (fields) => {
+    const images = [];
     if (fields.file && fields.file !== 'null') {
-        values.image_data = Buffer.from(fields.file, 'base64');
-        values.image_type = 'image/png';
-        values.image_name = 'meal.png';
+        images.push(fields.file);
     }
+    for (let i = 0; i < MAX_IMAGES_PER_POST; i += 1) {
+        const value = fields[`file_${i}`];
+        if (value && value !== 'null') {
+            images.push(value);
+        }
+    }
+    return images.slice(0, MAX_IMAGES_PER_POST);
+};
+
+const parseKeptImageIds = (fields) => {
+    const raw = fields.kept_image_ids;
+    if (typeof raw !== 'string' || raw.length === 0) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return null;
+        }
+        return parsed.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
+    } catch (error) {
+        return null;
+    }
+};
+
+const createPostImages = async (postId, base64Images, startingOrder = 0) => {
+    const rows = base64Images.map((base64, idx) => ({
+        post_id: postId,
+        image_data: Buffer.from(base64, 'base64'),
+        image_type: 'image/png',
+        image_name: 'meal.png',
+        sort_order: startingOrder + idx
+    }));
+    if (rows.length === 0) {
+        return;
+    }
+    await models.post_image.bulkCreate(rows);
 };
 
 const addPost = async (request, response) => {
     try {
         const fields = await parsePostRequest(request);
         const values = parseFieldsToPostValues(fields);
-        attachImageIfProvided(fields, values);
+        const images = collectImageBase64s(fields);
 
         const post = await models.post.create({
             ...values,
             post_date: new Date(),
             user_id: request.user.id
         });
+
+        if (images.length > 0) {
+            await createPostImages(post.id, images, 0);
+        }
 
         return sendSuccess(response, 201, { id: post.id });
     } catch (error) {
@@ -103,6 +145,38 @@ const findOwnedPost = async (request) => {
     });
 };
 
+const reconcilePostImages = async (postId, keptImageIds, newImages) => {
+    const existing = await models.post_image.findAll({
+        attributes: ['id', 'sort_order'],
+        where: { post_id: postId },
+        order: [['sort_order', 'ASC'], ['id', 'ASC']]
+    });
+
+    const keptOrder = [];
+    keptImageIds.forEach((keptId) => {
+        const match = existing.find((row) => row.id === keptId);
+        if (match) {
+            keptOrder.push(match);
+        }
+    });
+
+    const keptIdSet = new Set(keptOrder.map((row) => row.id));
+    const toDelete = existing.filter((row) => !keptIdSet.has(row.id)).map((row) => row.id);
+    if (toDelete.length > 0) {
+        await models.post_image.destroy({ where: { id: toDelete } });
+    }
+
+    for (let i = 0; i < keptOrder.length; i += 1) {
+        if (keptOrder[i].sort_order !== i) {
+            await models.post_image.update({ sort_order: i }, { where: { id: keptOrder[i].id } });
+        }
+    }
+
+    if (newImages.length > 0) {
+        await createPostImages(postId, newImages, keptOrder.length);
+    }
+};
+
 const updatePostWithFields = async (request, response, fields) => {
     const post = await findOwnedPost(request);
     if (!post) {
@@ -110,9 +184,20 @@ const updatePostWithFields = async (request, response, fields) => {
     }
 
     const updates = parseFieldsToPostValues(fields, post);
-    attachImageIfProvided(fields, updates);
 
     await post.update(updates);
+
+    const keptImageIds = parseKeptImageIds(fields);
+    const newImages = collectImageBase64s(fields);
+
+    if (keptImageIds !== null || newImages.length > 0) {
+        const totalCount = (keptImageIds?.length || 0) + newImages.length;
+        if (totalCount > MAX_IMAGES_PER_POST) {
+            return sendError(response, 400, `Posts can have at most ${MAX_IMAGES_PER_POST} photos.`, 'too_many_images');
+        }
+        await reconcilePostImages(post.id, keptImageIds || [], newImages);
+    }
+
     return sendSuccess(response, 200, { id: post.id, updated: true });
 };
 
@@ -133,6 +218,7 @@ const deletePost = async (request, response) => {
             return sendError(response, 404, 'Post not found', 'post_not_found');
         }
 
+        await models.post_image.destroy({ where: { post_id: post.id } });
         await post.destroy();
         return sendSuccess(response, 200, { deleted: true });
     } catch (error) {
@@ -158,10 +244,26 @@ const postMethodOverride = async (request, response) => {
     }
 };
 
+const loadOrderedPostImages = async (postId) => {
+    return models.post_image.findAll({
+        attributes: ['id', 'sort_order', 'image_type'],
+        where: { post_id: postId },
+        order: [['sort_order', 'ASC'], ['id', 'ASC']]
+    });
+};
+
+const respondWithImageBuffer = (response, row) => {
+    response.writeHead(200, {
+        'Content-Type': row.image_type || 'image/png',
+        'Content-Length': row.image_data.length
+    });
+    return response.end(Buffer.from(row.image_data));
+};
+
 const image = async (request, response) => {
     try {
         const post = await models.post.findOne({
-            attributes: ['id', 'user_id', 'is_private', 'image_data'],
+            attributes: ['id', 'user_id', 'is_private', 'image_data', 'image_type'],
             where: { id: request.params.id }
         });
 
@@ -169,20 +271,78 @@ const image = async (request, response) => {
             return sendError(response, 404, 'Post not found', 'post_not_found');
         }
 
+        const firstImage = await models.post_image.findOne({
+            where: { post_id: post.id },
+            order: [['sort_order', 'ASC'], ['id', 'ASC']]
+        });
+
+        if (firstImage && firstImage.image_data && firstImage.image_data.length > 0) {
+            return respondWithImageBuffer(response, firstImage);
+        }
+
         if (!post.image_data || post.image_data.length === 0) {
             return response.status(204).send();
         }
 
         response.writeHead(200, {
-            'Content-Type': 'image/png',
+            'Content-Type': post.image_type || 'image/png',
             'Content-Length': post.image_data.length
         });
-
         return response.end(Buffer.from(post.image_data));
     } catch (error) {
         console.error('image fetch failed', error);
         return sendError(response, 500, 'Error loading image', 'post_image_failed');
     }
+};
+
+const imageAtIndex = async (request, response) => {
+    try {
+        const post = await models.post.findOne({
+            attributes: ['id', 'user_id', 'is_private', 'image_data', 'image_type'],
+            where: { id: request.params.id }
+        });
+
+        if (!post || !(await canViewPostRecord(request.user.id, post))) {
+            return sendError(response, 404, 'Post not found', 'post_not_found');
+        }
+
+        const index = parseInt(request.params.index, 10);
+        if (!Number.isInteger(index) || index < 0) {
+            return sendError(response, 400, INVALID_REQUEST_ERROR, 'invalid_request');
+        }
+
+        const images = await loadOrderedPostImages(post.id);
+        if (images.length > 0) {
+            if (index >= images.length) {
+                return sendError(response, 404, 'Image not found', 'image_not_found');
+            }
+            const row = await models.post_image.findByPk(images[index].id);
+            if (!row || !row.image_data || row.image_data.length === 0) {
+                return response.status(204).send();
+            }
+            return respondWithImageBuffer(response, row);
+        }
+
+        if (index === 0 && post.image_data && post.image_data.length > 0) {
+            response.writeHead(200, {
+                'Content-Type': post.image_type || 'image/png',
+                'Content-Length': post.image_data.length
+            });
+            return response.end(Buffer.from(post.image_data));
+        }
+
+        return sendError(response, 404, 'Image not found', 'image_not_found');
+    } catch (error) {
+        console.error('imageAtIndex fetch failed', error);
+        return sendError(response, 500, 'Error loading image', 'post_image_failed');
+    }
+};
+
+const buildImageUrls = (postId, count) => {
+    if (count <= 0) {
+        return [];
+    }
+    return Array.from({ length: count }, (_, idx) => `/post/${postId}/image/${idx}`);
 };
 
 const post = async (request, response) => {
@@ -200,7 +360,8 @@ const post = async (request, response) => {
                 'place_latitude',
                 'place_longitude',
                 'comments',
-                'is_private'
+                'is_private',
+                'image_data'
             ],
             where: { id: request.params.id },
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }]
@@ -208,6 +369,13 @@ const post = async (request, response) => {
 
         if (!postRecord || !(await canViewPostRecord(request.user.id, postRecord))) {
             return sendError(response, 404, 'Post not found', 'post_not_found');
+        }
+
+        const orderedImages = await loadOrderedPostImages(postRecord.id);
+        const imageIds = orderedImages.map((row) => row.id);
+        let imageUrls = buildImageUrls(postRecord.id, orderedImages.length);
+        if (imageUrls.length === 0 && postRecord.image_data && postRecord.image_data.length > 0) {
+            imageUrls = [`/post/image/${postRecord.id}`];
         }
 
         return sendSuccess(response, 200, {
@@ -221,7 +389,9 @@ const post = async (request, response) => {
             place_secondary_text: postRecord.place_secondary_text,
             place_latitude: postRecord.place_latitude,
             place_longitude: postRecord.place_longitude,
-            image_url: `/post/image/${postRecord.id}`,
+            image_url: imageUrls[0] || null,
+            image_urls: imageUrls,
+            image_ids: imageIds,
             is_private: postRecord.is_private,
             is_mine: postRecord.user_id === request.user.id,
             owner: mapOwnerSummary(postRecord.user)
@@ -232,4 +402,4 @@ const post = async (request, response) => {
     }
 };
 
-export { addPost, image, post, updatePost, deletePost, postMethodOverride };
+export { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, MAX_IMAGES_PER_POST };
