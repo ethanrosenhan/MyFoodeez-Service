@@ -1,4 +1,4 @@
-import { models } from '../utils/database.js';
+import sequelize, { models } from '../utils/database.js';
 
 const escapeHtml = (value) => {
     if (value === null || value === undefined) {
@@ -47,6 +47,16 @@ const buildPlainTextSummary = (post, ownerName) => {
 const sharePostPage = async (request, response) => {
     try {
         const post = await models.post.findOne({
+            attributes: [
+                'id',
+                'place',
+                'cuisine',
+                'rating',
+                'comments',
+                'is_private',
+                'user_id',
+                [sequelize.literal('(image_data IS NOT NULL AND octet_length(image_data) > 0)'), 'has_legacy_image']
+            ],
             where: { id: request.params.id, is_private: false },
             include: [{ model: models.user, attributes: ['first_name', 'last_name'] }]
         });
@@ -55,12 +65,11 @@ const sharePostPage = async (request, response) => {
         }
 
         const firstImage = await models.post_image.findOne({
-            attributes: ['id', 'image_data'],
+            attributes: ['id'],
             where: { post_id: post.id },
             order: [['sort_order', 'ASC'], ['id', 'ASC']]
         });
-        const hasShareableImage = (firstImage && firstImage.image_data && firstImage.image_data.length > 0)
-            || (post.image_data && post.image_data.length > 0);
+        const hasShareableImage = Boolean(firstImage) || Boolean(post.get('has_legacy_image'));
 
         const ownerName = getOwnerName(post.user);
         const place = post.place || 'a restaurant';
@@ -161,7 +170,7 @@ const sharePostPage = async (request, response) => {
 const sharePostImage = async (request, response) => {
     try {
         const post = await models.post.findOne({
-            attributes: ['id', 'is_private', 'image_data', 'image_type'],
+            attributes: ['id', 'is_private'],
             where: { id: request.params.id }
         });
         if (!post || post.is_private) {
@@ -182,16 +191,21 @@ const sharePostImage = async (request, response) => {
             return response.end(Buffer.from(firstImage.image_data));
         }
 
-        if (!post.image_data || post.image_data.length === 0) {
+        const legacy = await models.post.findOne({
+            attributes: ['image_data', 'image_type'],
+            where: { id: post.id }
+        });
+
+        if (!legacy || !legacy.image_data || legacy.image_data.length === 0) {
             return response.status(404).send();
         }
 
         response.writeHead(200, {
-            'Content-Type': post.image_type || 'image/png',
-            'Content-Length': post.image_data.length,
+            'Content-Type': legacy.image_type || 'image/png',
+            'Content-Length': legacy.image_data.length,
             'Cache-Control': 'public, max-age=300'
         });
-        return response.end(Buffer.from(post.image_data));
+        return response.end(Buffer.from(legacy.image_data));
     } catch (error) {
         console.error('share post image failed', error);
         return response.status(500).send();

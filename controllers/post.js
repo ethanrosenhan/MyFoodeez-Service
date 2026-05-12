@@ -263,7 +263,7 @@ const respondWithImageBuffer = (response, row) => {
 const image = async (request, response) => {
     try {
         const post = await models.post.findOne({
-            attributes: ['id', 'user_id', 'is_private', 'image_data', 'image_type'],
+            attributes: ['id', 'user_id', 'is_private'],
             where: { id: request.params.id }
         });
 
@@ -280,15 +280,20 @@ const image = async (request, response) => {
             return respondWithImageBuffer(response, firstImage);
         }
 
-        if (!post.image_data || post.image_data.length === 0) {
+        const legacy = await models.post.findOne({
+            attributes: ['image_data', 'image_type'],
+            where: { id: post.id }
+        });
+
+        if (!legacy || !legacy.image_data || legacy.image_data.length === 0) {
             return response.status(204).send();
         }
 
         response.writeHead(200, {
-            'Content-Type': post.image_type || 'image/png',
-            'Content-Length': post.image_data.length
+            'Content-Type': legacy.image_type || 'image/png',
+            'Content-Length': legacy.image_data.length
         });
-        return response.end(Buffer.from(post.image_data));
+        return response.end(Buffer.from(legacy.image_data));
     } catch (error) {
         console.error('image fetch failed', error);
         return sendError(response, 500, 'Error loading image', 'post_image_failed');
@@ -298,7 +303,7 @@ const image = async (request, response) => {
 const imageAtIndex = async (request, response) => {
     try {
         const post = await models.post.findOne({
-            attributes: ['id', 'user_id', 'is_private', 'image_data', 'image_type'],
+            attributes: ['id', 'user_id', 'is_private'],
             where: { id: request.params.id }
         });
 
@@ -323,15 +328,24 @@ const imageAtIndex = async (request, response) => {
             return respondWithImageBuffer(response, row);
         }
 
-        if (index === 0 && post.image_data && post.image_data.length > 0) {
-            response.writeHead(200, {
-                'Content-Type': post.image_type || 'image/png',
-                'Content-Length': post.image_data.length
-            });
-            return response.end(Buffer.from(post.image_data));
+        if (index !== 0) {
+            return sendError(response, 404, 'Image not found', 'image_not_found');
         }
 
-        return sendError(response, 404, 'Image not found', 'image_not_found');
+        const legacy = await models.post.findOne({
+            attributes: ['image_data', 'image_type'],
+            where: { id: post.id }
+        });
+
+        if (!legacy || !legacy.image_data || legacy.image_data.length === 0) {
+            return sendError(response, 404, 'Image not found', 'image_not_found');
+        }
+
+        response.writeHead(200, {
+            'Content-Type': legacy.image_type || 'image/png',
+            'Content-Length': legacy.image_data.length
+        });
+        return response.end(Buffer.from(legacy.image_data));
     } catch (error) {
         console.error('imageAtIndex fetch failed', error);
         return sendError(response, 500, 'Error loading image', 'post_image_failed');
@@ -361,7 +375,7 @@ const post = async (request, response) => {
                 'place_longitude',
                 'comments',
                 'is_private',
-                'image_data'
+                [sequelize.literal('(image_data IS NOT NULL AND octet_length(image_data) > 0)'), 'has_legacy_image']
             ],
             where: { id: request.params.id },
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }]
@@ -374,7 +388,7 @@ const post = async (request, response) => {
         const orderedImages = await loadOrderedPostImages(postRecord.id);
         const imageIds = orderedImages.map((row) => row.id);
         let imageUrls = buildImageUrls(postRecord.id, orderedImages.length);
-        if (imageUrls.length === 0 && postRecord.image_data && postRecord.image_data.length > 0) {
+        if (imageUrls.length === 0 && postRecord.get('has_legacy_image')) {
             imageUrls = [`/post/image/${postRecord.id}`];
         }
 
