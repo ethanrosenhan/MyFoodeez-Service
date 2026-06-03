@@ -40,6 +40,10 @@ export default (sequelize) => {
             type: Sequelize.STRING,
             allowNull: false
         },
+        cuisine_id: {
+            type: Sequelize.STRING,
+            allowNull: true
+        },
         image_type: {
             type: Sequelize.STRING,
             allowNull: true

@@ -2,6 +2,7 @@ import sequelize, { models } from '../utils/database.js';
 import { IncomingForm } from 'formidable';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
+import { findById as findCuisineById } from '../constants/cuisines.js';
 import { canViewPostRecord, mapOwnerSummary } from '../lib/social-helper.js';
 
 const MAX_IMAGES_PER_POST = 5;
@@ -50,9 +51,43 @@ const parsePrivateFlag = (value, fallback = true) => {
     return fallback;
 };
 
+// Resolve the (cuisine_id, cuisine) pair from the client payload.
+//
+// Two valid client shapes:
+//  (1) Structured pick: cuisine_id = taxonomy id (e.g. 'pizza-ny'). We
+//      authoritatively set `cuisine` to the taxonomy label so display can't
+//      drift from id.
+//  (2) "Other" free text: cuisine_id is missing/null, cuisine is free text.
+//
+// On update, if the client sends neither (e.g. an old client that doesn't
+// know about cuisine_id yet), preserve whatever the existing post had.
+const resolveCuisine = (fields, existingPost) => {
+    const rawId = toNullableString(fields.cuisine_id);
+    const entry = rawId ? findCuisineById(rawId) : null;
+
+    if (entry && entry.id !== 'other') {
+        // Structured pick — server owns the label.
+        return { cuisine_id: entry.id, cuisine: entry.label };
+    }
+
+    // Free-text / Other path. Trust the client's cuisine string; fall back
+    // to existing values; finally fall back to the legacy 'Unknown' default
+    // so the NOT NULL constraint on `cuisine` is satisfied.
+    const cuisine = toNullableString(fields.cuisine)
+        || existingPost?.cuisine
+        || 'Unknown';
+    // If client explicitly sent cuisine_id='other' or omitted it on update,
+    // preserve existing cuisine_id (don't blow away a previously-categorized
+    // post just because the new payload lacks the field).
+    const cuisine_id = rawId === null
+        ? (existingPost?.cuisine_id ?? null)
+        : null;
+    return { cuisine_id, cuisine };
+};
+
 const parseFieldsToPostValues = (fields, existingPost = null) => {
     const place = toNullableString(fields.place) || existingPost?.place || 'Unknown';
-    const cuisine = toNullableString(fields.cuisine) || existingPost?.cuisine || 'Unknown';
+    const { cuisine, cuisine_id } = resolveCuisine(fields, existingPost);
     const rating = toNullableString(fields.rating);
     const comments = typeof fields.comments === 'string' ? fields.comments.trim() : existingPost?.comments || '';
 
@@ -63,6 +98,7 @@ const parseFieldsToPostValues = (fields, existingPost = null) => {
         place_latitude: toNullableString(fields.place_latitude),
         place_longitude: toNullableString(fields.place_longitude),
         cuisine,
+        cuisine_id,
         rating,
         comments,
         is_private: parsePrivateFlag(fields.is_private, existingPost?.is_private ?? false)
@@ -367,6 +403,7 @@ const post = async (request, response) => {
                 'user_id',
                 'post_date',
                 'cuisine',
+                'cuisine_id',
                 'rating',
                 'place',
                 'place_id',
@@ -396,6 +433,7 @@ const post = async (request, response) => {
             id: postRecord.id,
             post_date: postRecord.post_date,
             cuisine: postRecord.cuisine,
+            cuisine_id: postRecord.cuisine_id,
             rating: postRecord.rating,
             comments: postRecord.comments,
             place: postRecord.place,

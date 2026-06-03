@@ -6,6 +6,7 @@ import { passwordResetStart, passwordResetVerify, passwordResetChange, isPasswor
 import { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts } from '../controllers/profile.js';
 import { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride } from '../controllers/post.js';
 import { search, places } from '../controllers/posts.js';
+import { list as listCuisines } from '../controllers/cuisines.js';
 import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
 import { privacyPage } from '../controllers/privacy.js';
@@ -54,6 +55,7 @@ router.get('/post/image/:id', isAuthorized, image);
 router.get('/post/:id/image/:index', isAuthorized, imageAtIndex);
 router.get('/posts/search', isAuthorized, search);
 router.get('/posts/places', isAuthorized, places);
+router.get('/cuisines', listCuisines);
 router.post('/post', isAuthorized, addPost);
 router.get('/post/:id', isAuthorized, post);
 router.put('/post/:id', isAuthorized, updatePost);
