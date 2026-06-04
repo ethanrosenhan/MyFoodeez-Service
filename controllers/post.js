@@ -4,6 +4,8 @@ import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
 import { canViewPostRecord, mapOwnerSummary } from '../lib/social-helper.js';
+import { loadStarSummary } from './stars.js';
+import { notifyFriendsOfPostAtPlace } from '../lib/notifications.js';
 
 const MAX_IMAGES_PER_POST = 5;
 
@@ -163,6 +165,19 @@ const addPost = async (request, response) => {
 
         if (images.length > 0) {
             await createPostImages(post.id, images, 0);
+        }
+
+        // Fire-and-forget notification to friends who have also posted at
+        // this place. Wrapped so a notification failure can't bubble up and
+        // turn a successful post-create into a 500.
+        if (post.place_id) {
+            notifyFriendsOfPostAtPlace({
+                postAuthorUserId: request.user.id,
+                placeId: post.place_id,
+                place: post.place
+            }).catch((error) => {
+                console.warn('post-create notification failed', error?.message || error);
+            });
         }
 
         return sendSuccess(response, 201, { id: post.id });
@@ -429,6 +444,8 @@ const post = async (request, response) => {
             imageUrls = [`/post/image/${postRecord.id}`];
         }
 
+        const starSummary = await loadStarSummary(postRecord.id, request.user.id);
+
         return sendSuccess(response, 200, {
             id: postRecord.id,
             post_date: postRecord.post_date,
@@ -446,7 +463,9 @@ const post = async (request, response) => {
             image_ids: imageIds,
             is_private: postRecord.is_private,
             is_mine: postRecord.user_id === request.user.id,
-            owner: mapOwnerSummary(postRecord.user)
+            owner: mapOwnerSummary(postRecord.user),
+            star_count: starSummary.star_count,
+            is_starred_by_me: starSummary.is_starred_by_me
         });
     } catch (error) {
         console.error('post fetch failed', error);

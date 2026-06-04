@@ -4,10 +4,14 @@ import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { getPostAccessWhere, mapOwnerSummary } from '../lib/social-helper.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
+import { loadStarStateForPosts } from './stars.js';
 
 const Op = Sequelize.Op;
 
-const VALID_SORTS = ['date', 'rating'];
+// Sort enum. Adding a new branch requires (a) adding the key here, (b) adding
+// the matching ORDER BY in `search`. Keep this in sync with the app's sort
+// toggle in RestaurantScreen.js.
+const VALID_SORTS = ['date', 'rating', 'stars'];
 
 const buildPostImageUrls = (postId, imageCount) => {
     if (imageCount > 0) {
@@ -16,7 +20,7 @@ const buildPostImageUrls = (postId, imageCount) => {
     return [`/post/image/${postId}`];
 };
 
-const mapPostToListItem = (post, requestUserId, imageCount) => {
+const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false) => {
     const imageUrls = buildPostImageUrls(post.id, imageCount);
     return {
         id: post.id,
@@ -34,7 +38,9 @@ const mapPostToListItem = (post, requestUserId, imageCount) => {
         image_urls: imageUrls,
         is_private: post.is_private,
         is_mine: post.user_id === requestUserId,
-        owner: mapOwnerSummary(post.user)
+        owner: mapOwnerSummary(post.user),
+        star_count: starCount,
+        is_starred_by_me: isStarredByMe
     };
 };
 
@@ -94,14 +100,23 @@ const search = async (request, response) => {
         }
 
         // `rating` is stored as STRING in the DB; CAST to FLOAT so Postgres
-        // sorts numerically (otherwise "10" < "2" lexically). When community
-        // upvotes are added later, add another branch here (e.g. 'stars').
-        const orderClause = sort === 'rating'
-            ? [
+        // sorts numerically (otherwise "10" < "2" lexically). For 'stars' we
+        // pull star_count via a correlated subquery and order by it; cheaper
+        // than a JOIN+GROUP BY for this dataset's size.
+        let orderClause;
+        if (sort === 'rating') {
+            orderClause = [
                 [Sequelize.literal('CAST(rating AS FLOAT) DESC NULLS LAST')],
                 ['post_date', 'DESC']
-            ]
-            : [['post_date', 'DESC']];
+            ];
+        } else if (sort === 'stars') {
+            orderClause = [
+                [Sequelize.literal('(SELECT COUNT(*) FROM post_stars WHERE post_stars.post_id = "post"."id") DESC')],
+                ['post_date', 'DESC']
+            ];
+        } else {
+            orderClause = [['post_date', 'DESC']];
+        }
 
         log(request, '/posts/search', { page, limit, placeId, scope, sort });
 
@@ -114,10 +129,20 @@ const search = async (request, response) => {
             order: orderClause
         });
 
-        const imageCounts = await loadImageCountsForPosts(posts.map((p) => p.id));
+        const postIds = posts.map((p) => p.id);
+        const [imageCounts, starState] = await Promise.all([
+            loadImageCountsForPosts(postIds),
+            loadStarStateForPosts(postIds, request.user.id)
+        ]);
 
         return sendSuccess(response, 200, {
-            data: posts.map((post) => mapPostToListItem(post, request.user.id, imageCounts.get(post.id) || 0))
+            data: posts.map((post) => mapPostToListItem(
+                post,
+                request.user.id,
+                imageCounts.get(post.id) || 0,
+                starState.counts.get(post.id) || 0,
+                starState.mineSet.has(post.id)
+            ))
         });
     } catch (error) {
         console.error('search posts failed', error);
@@ -255,4 +280,50 @@ const places = async (request, response) => {
     }
 };
 
-export { search, places };
+const feed = async (request, response) => {
+    try {
+        const page = parseInt(request.query.page || 1, 10);
+        const limit = parseInt(request.query.limit || 20, 10);
+        const offset = (page - 1) * limit;
+
+        // The feed is always the union of self + accepted friends' shared
+        // posts. We don't accept a scope param here — the feed has a stable
+        // semantic that callers shouldn't reshape on the fly. If we later
+        // need a "friends only" mode the right move is a separate param,
+        // not overloading scope.
+        const whereClause = await getPostAccessWhere(request.user.id, 'all');
+
+        log(request, '/feed', { page, limit });
+
+        const posts = await models.post.findAll({
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            where: whereClause,
+            include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
+            limit,
+            offset,
+            order: [['post_date', 'DESC']]
+        });
+
+        const postIds = posts.map((p) => p.id);
+        const [imageCounts, starState] = await Promise.all([
+            loadImageCountsForPosts(postIds),
+            loadStarStateForPosts(postIds, request.user.id)
+        ]);
+
+        return sendSuccess(response, 200, {
+            data: posts.map((post) => mapPostToListItem(
+                post,
+                request.user.id,
+                imageCounts.get(post.id) || 0,
+                starState.counts.get(post.id) || 0,
+                starState.mineSet.has(post.id)
+            ))
+        });
+    } catch (error) {
+        console.error('feed fetch failed', error);
+        log(request, '/feed', { error: error.message });
+        return sendError(response, 500, 'Unable to load feed', 'feed_fetch_failed');
+    }
+};
+
+export { search, places, feed };

@@ -5,8 +5,12 @@ import { signupStart, signupFinish } from '../controllers/signup.js';
 import { passwordResetStart, passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
 import { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts } from '../controllers/profile.js';
 import { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride } from '../controllers/post.js';
-import { search, places } from '../controllers/posts.js';
+import { search, places, feed } from '../controllers/posts.js';
 import { list as listCuisines } from '../controllers/cuisines.js';
+import { addStar, removeStar } from '../controllers/stars.js';
+import { addToWishlist, removeFromWishlist, listWishlist, listWishlistPlaces } from '../controllers/wishlist.js';
+import { registerDeviceToken, unregisterDeviceToken } from '../controllers/device-tokens.js';
+import { renderRestaurantPage } from '../controllers/restaurant.js';
 import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
 import { privacyPage } from '../controllers/privacy.js';
@@ -39,6 +43,9 @@ router.post('/support/submit', express.urlencoded({ extended: true }), supportSu
 router.get('/privacy', privacyPage);
 router.get('/share/post/:id', sharePostPage);
 router.get('/share/post/:id/image', sharePostImage);
+// Public, unauthenticated restaurant page — SEO surface. Path is /r/<placeId>
+// to keep the URL short and shareable.
+router.get('/r/:placeId', renderRestaurantPage);
 
 router.get('/maps/api/place/autocomplete/json', isAuthorized, proxyGooglePlaces);
 router.get('/maps/api/place/details/json', isAuthorized, proxyGooglePlaces);
@@ -55,7 +62,16 @@ router.get('/post/image/:id', isAuthorized, image);
 router.get('/post/:id/image/:index', isAuthorized, imageAtIndex);
 router.get('/posts/search', isAuthorized, search);
 router.get('/posts/places', isAuthorized, places);
+router.get('/feed', isAuthorized, feed);
 router.get('/cuisines', listCuisines);
+router.post('/post/:id/star', isAuthorized, addStar);
+router.delete('/post/:id/star', isAuthorized, removeStar);
+router.get('/wishlist', isAuthorized, listWishlist);
+router.get('/wishlist/places', isAuthorized, listWishlistPlaces);
+router.post('/wishlist', isAuthorized, addToWishlist);
+router.delete('/wishlist/:placeId', isAuthorized, removeFromWishlist);
+router.post('/device-tokens', isAuthorized, registerDeviceToken);
+router.delete('/device-tokens/:token', isAuthorized, unregisterDeviceToken);
 router.post('/post', isAuthorized, addPost);
 router.get('/post/:id', isAuthorized, post);
 router.put('/post/:id', isAuthorized, updatePost);
