@@ -10,7 +10,7 @@ import { list as listCuisines } from '../controllers/cuisines.js';
 import { addStar, removeStar } from '../controllers/stars.js';
 import { addToWishlist, removeFromWishlist, listWishlist, listWishlistPlaces } from '../controllers/wishlist.js';
 import { registerDeviceToken, unregisterDeviceToken } from '../controllers/device-tokens.js';
-import { listMenu, addMenuItem, updateMenuItem, flagMenuItem, verifyMenuItem } from '../controllers/menu.js';
+import { listMenu, addMenuItem, updateMenuItem, flagMenuItem, verifyMenuItem, parseMenu } from '../controllers/menu.js';
 import { renderRestaurantPage } from '../controllers/restaurant.js';
 import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
@@ -77,6 +77,8 @@ router.delete('/device-tokens/:token', isAuthorized, unregisterDeviceToken);
 // Item routes use the opaque public_id, not the serial id.
 router.get('/menu/:placeId', isAuthorized, listMenu);
 router.post('/menu/:placeId/item', isAuthorized, addMenuItem);
+// Phase 2 — Claude Vision: photograph/PDF a physical menu, seed it in bulk.
+router.post('/menu/:placeId/parse', isAuthorized, parseMenu);
 router.put('/menu/item/:id', isAuthorized, updateMenuItem);
 router.post('/menu/item/:id/flag', isAuthorized, flagMenuItem);
 router.post('/menu/item/:id/verify', isAuthorized, verifyMenuItem);

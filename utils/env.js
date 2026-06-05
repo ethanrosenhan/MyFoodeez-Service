@@ -11,6 +11,15 @@ const optionalEnvironmentVariables = {
     PASSWORD_CHANGE_FROM_EMAIL: '',
     SUPPORT_RECEIVED_TO_EMAIL: '',
     GOOGLE_MAPS_SERVER_API_KEY: '',
+    // Phase 2 — Claude Vision menu parser. ANTHROPIC_API_KEY is intentionally
+    // optional: the parse endpoint returns 503 (not a boot failure) when it's
+    // unset, so the rest of the service runs fine without a key configured.
+    ANTHROPIC_API_KEY: '',
+    ANTHROPIC_MODEL: 'claude-opus-4-8',
+    // Used only when the primary model returns a retryable upstream error
+    // (e.g. a 529 overload). Keeps menu scanning working through Opus capacity
+    // crunches. Set equal to ANTHROPIC_MODEL to disable the fallback.
+    ANTHROPIC_FALLBACK_MODEL: 'claude-sonnet-4-6',
     SERVICE_NAME: 'myfoodeez-service',
     CORS_ORIGIN: '*',
     TOKEN_EXPIRES_IN: '30d',

@@ -17,9 +17,12 @@ const {
 const {
     listMenu,
     flagMenuItem,
+    parseMenu,
     groupBySection,
     normalizeName,
     parsePriceToCents,
+    extractJsonArray,
+    __setAnthropicClientForTests,
     FLAG_THRESHOLD
 } = await import('./controllers/menu.js');
 
@@ -163,5 +166,80 @@ test('menu flagMenuItem hides an item once it reaches the flag threshold', async
     t.equal(res.body.status, 'flagged', 'dropped from default list at threshold');
 
     models.menu_item.findOne = original;
+    t.end();
+});
+
+test('menu extractJsonArray recovers a JSON array even with a Claude preamble', (t) => {
+    t.deepEqual(extractJsonArray('[{"name":"Burger"}]'), [{ name: 'Burger' }], 'clean JSON parses directly');
+    t.deepEqual(
+        extractJsonArray('Here is the menu:\n[{"name":"Steak"}]\nHope this helps!'),
+        [{ name: 'Steak' }],
+        'array is sliced out of surrounding prose'
+    );
+    t.equal(extractJsonArray('not json at all'), null, 'unparseable text returns null');
+    t.end();
+});
+
+test('menu parseMenu returns 503 when no Anthropic key/client is configured', async (t) => {
+    // No injected client and (in the test env) no ANTHROPIC_API_KEY -> feature off.
+    __setAnthropicClientForTests(null);
+    const res = makeRes();
+    await parseMenu({ params: { placeId: 'abc' }, headers: {}, user: { id: 1 } }, res);
+    t.equal(res.statusCode, 503);
+    t.equal(res.body.error.code, 'menu_parse_not_configured');
+    t.end();
+});
+
+test('menu parseMenu inserts parsed items and exposes public_id (never the serial id)', async (t) => {
+    const parsedJson = JSON.stringify([
+        { section: 'Mains', name: 'Margherita Pizza', price_text: '$14', price_cents: 1400, currency: 'USD', confidence: 0.95 },
+        { section: 'Mains', name: '', price_text: '$9', confidence: 0.2 } // dropped: empty name
+    ]);
+
+    // Fake Anthropic client — returns a known JSON string, never hits the network.
+    let capturedRequest = null;
+    __setAnthropicClientForTests({
+        messages: {
+            create: async (req) => {
+                capturedRequest = req;
+                return {
+                    content: [{ type: 'text', text: parsedJson }],
+                    usage: { input_tokens: 1200, output_tokens: 80, cache_read_input_tokens: 0 }
+                };
+            }
+        }
+    });
+
+    const originalBulkCreate = models.menu_item.bulkCreate;
+    let capturedRows = null;
+    models.menu_item.bulkCreate = async (rows) => {
+        capturedRows = rows;
+        // Simulate Postgres returning rows with their generated public_id + serial id.
+        return rows.map((row, idx) => ({ ...row, id: 1000 + idx, public_id: `parsed-${idx}` }));
+    };
+
+    const res = makeRes();
+    await parseMenu({
+        params: { placeId: 'place-123' },
+        headers: { 'content-type': 'application/json' },
+        body: { file_0: 'ZmFrZS1iYXNlNjQ=', place: 'Testaurant' },
+        user: { id: 7 }
+    }, res);
+
+    t.equal(res.statusCode, 201);
+    t.equal(res.body.parsed_count, 1, 'only the well-formed item is inserted (empty name dropped)');
+    t.equal(res.body.items[0].id, 'parsed-0', 'DTO exposes public_id as id, never the serial 1000');
+    t.equal(res.body.items[0].name, 'Margherita Pizza');
+    t.equal(capturedRows[0].source, 'parsed', 'rows are tagged source:parsed');
+    t.equal(capturedRows[0].created_by_user_id, 7, 'attributed to the authed user');
+    t.equal(capturedRows[0].normalized_name, 'margherita pizza', 'normalized for dedup');
+    t.ok(
+        capturedRequest.system[0].cache_control && capturedRequest.system[0].cache_control.type === 'ephemeral',
+        'system prompt is sent with prompt caching enabled'
+    );
+    t.equal(capturedRequest.messages[0].content[0].type, 'image', 'the uploaded photo is sent as an image block');
+
+    models.menu_item.bulkCreate = originalBulkCreate;
+    __setAnthropicClientForTests(null);
     t.end();
 });
