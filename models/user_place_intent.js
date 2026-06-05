@@ -44,6 +44,14 @@ export default (sequelize) => {
         note: {
             type: Sequelize.TEXT,
             allowNull: true
+        },
+        // Optional reference to the specific post that inspired this wishlist
+        // entry. null means the user saved the restaurant-level page (no
+        // specific post in mind). When set, the WishlistScreen shows context:
+        // "Inspired by Sarah's post · NY-Style Pizza → View post"
+        source_post_id: {
+            type: Sequelize.INTEGER,
+            allowNull: true
         }
     }, {
         updatedAt: 'updated_at',

@@ -8,6 +8,7 @@ const applyExtraSetup =  (sequelize)=> {
 	post_star.belongsTo(post, { foreignKey: 'post_id' });
 	post_star.belongsTo(user, { foreignKey: 'user_id' });
 	user_place_intent.belongsTo(user, { foreignKey: 'user_id' });
+	user_place_intent.belongsTo(post, { foreignKey: 'source_post_id', as: 'source_post' });
 	device_token.belongsTo(user, { foreignKey: 'user_id' });
 	audit.belongsTo(user, {foreignKey: 'user_id'});
 	friendship.belongsTo(user, { foreignKey: 'requester_user_id', as: 'requester' });

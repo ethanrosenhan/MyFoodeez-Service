@@ -59,6 +59,12 @@ const CUISINES = [
     { id: 'mediterranean-lebanese', label: 'Lebanese', parent: 'mediterranean', aliases: ['lebanese'] },
     { id: 'mediterranean-turkish', label: 'Turkish', parent: 'mediterranean', aliases: ['turkish'] },
 
+    // Fast Food (general — not tied to a specific cuisine)
+    { id: 'fast-food', label: 'Fast Food', parent: null, aliases: ['fast food', 'fastfood'] },
+    { id: 'fast-food-burgers', label: 'Burgers', parent: 'fast-food', aliases: ["mcdonald's", 'mcdonalds', 'burger king', "wendy's", 'wendys', 'five guys', 'in-n-out', 'whataburger'] },
+    { id: 'fast-food-chicken', label: 'Chicken', parent: 'fast-food', aliases: ['chick-fil-a', 'chickfila', 'popeyes', 'kfc', "raising cane's", 'raising canes', "zaxby's"] },
+    { id: 'fast-food-sandwiches', label: 'Sandwiches / Subs', parent: 'fast-food', aliases: ['subway', 'jimmy johns', "jimmy john's", 'jersey mikes', "jersey mike's", 'firehouse subs'] },
+
     // Single-category top-levels
     { id: 'seafood', label: 'Seafood', parent: null, aliases: ['seafood', 'fish'] },
     { id: 'breakfast', label: 'Breakfast / Brunch', parent: null, aliases: ['breakfast', 'brunch'] },
