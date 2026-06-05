@@ -68,6 +68,12 @@ export default (sequelize) => {
             type: Sequelize.BOOLEAN,
             allowNull: false,
             defaultValue: false
+        },
+        // Optional link to a structured menu_item ("what did you order?").
+        // Nullable by design — posting never requires touching the menu.
+        menu_item_id: {
+            type: Sequelize.INTEGER,
+            allowNull: true
         }
     }, {
         updatedAt: 'updated_at',

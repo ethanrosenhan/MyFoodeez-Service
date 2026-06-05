@@ -10,6 +10,7 @@ import password_reset from '../models/password_reset.js'
 import friendship from '../models/friendship.js'
 import user_place_intent from '../models/user_place_intent.js'
 import device_token from '../models/device_token.js'
+import menu_item from '../models/menu_item.js'
 import {applyExtraSetup} from './extra-setup.js';
 
 let dboptions = {
@@ -39,7 +40,8 @@ const modelDefiners = [
     password_reset,
     friendship,
     user_place_intent,
-    device_token
+    device_token,
+    menu_item
 ];
 
 for (const modelDefiner of modelDefiners) {

@@ -107,6 +107,24 @@ const parseFieldsToPostValues = (fields, existingPost = null) => {
     };
 };
 
+// The client references a menu item by its opaque public_id (never the serial
+// FK). Resolve it to the internal menu_item.id here so the post FK stays a real
+// integer and public_id remains opaque to clients.
+//   - field absent  -> on create: null; on update: undefined (leave unchanged)
+//   - field empty    -> explicit clear (null)
+//   - field a UUID   -> resolved internal id, or null if it doesn't exist
+const resolveMenuItemId = async (fields, existingPost = null) => {
+    if (!Object.prototype.hasOwnProperty.call(fields, 'menu_item_id')) {
+        return existingPost ? undefined : null;
+    }
+    const publicId = toNullableString(fields.menu_item_id);
+    if (!publicId) {
+        return null;
+    }
+    const item = await models.menu_item.findOne({ attributes: ['id'], where: { public_id: publicId } });
+    return item ? item.id : null;
+};
+
 const collectImageBase64s = (fields) => {
     const images = [];
     if (fields.file && fields.file !== 'null') {
@@ -155,10 +173,12 @@ const addPost = async (request, response) => {
     try {
         const fields = await parsePostRequest(request);
         const values = parseFieldsToPostValues(fields);
+        const menu_item_id = await resolveMenuItemId(fields);
         const images = collectImageBase64s(fields);
 
         const post = await models.post.create({
             ...values,
+            menu_item_id,
             post_date: new Date(),
             user_id: request.user.id
         });
@@ -235,6 +255,10 @@ const updatePostWithFields = async (request, response, fields) => {
     }
 
     const updates = parseFieldsToPostValues(fields, post);
+    const menu_item_id = await resolveMenuItemId(fields, post);
+    if (menu_item_id !== undefined) {
+        updates.menu_item_id = menu_item_id;
+    }
 
     await post.update(updates);
 
@@ -427,10 +451,14 @@ const post = async (request, response) => {
                 'place_longitude',
                 'comments',
                 'is_private',
+                'menu_item_id',
                 [sequelize.literal('(image_data IS NOT NULL AND octet_length(image_data) > 0)'), 'has_legacy_image']
             ],
             where: { id: request.params.id },
-            include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }]
+            include: [
+                { model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] },
+                { model: models.menu_item, required: false, attributes: ['public_id', 'name', 'price_text', 'cuisine_id'] }
+            ]
         });
 
         if (!postRecord || !(await canViewPostRecord(request.user.id, postRecord))) {
@@ -461,6 +489,12 @@ const post = async (request, response) => {
             image_url: imageUrls[0] || null,
             image_urls: imageUrls,
             image_ids: imageIds,
+            menu_item: postRecord.menu_item ? {
+                id: postRecord.menu_item.public_id,
+                name: postRecord.menu_item.name,
+                price_text: postRecord.menu_item.price_text,
+                cuisine_id: postRecord.menu_item.cuisine_id
+            } : null,
             is_private: postRecord.is_private,
             is_mine: postRecord.user_id === request.user.id,
             owner: mapOwnerSummary(postRecord.user),

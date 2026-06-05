@@ -10,6 +10,7 @@ import { list as listCuisines } from '../controllers/cuisines.js';
 import { addStar, removeStar } from '../controllers/stars.js';
 import { addToWishlist, removeFromWishlist, listWishlist, listWishlistPlaces } from '../controllers/wishlist.js';
 import { registerDeviceToken, unregisterDeviceToken } from '../controllers/device-tokens.js';
+import { listMenu, addMenuItem, updateMenuItem, flagMenuItem, verifyMenuItem } from '../controllers/menu.js';
 import { renderRestaurantPage } from '../controllers/restaurant.js';
 import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
@@ -72,6 +73,13 @@ router.post('/wishlist', isAuthorized, addToWishlist);
 router.delete('/wishlist/:placeId', isAuthorized, removeFromWishlist);
 router.post('/device-tokens', isAuthorized, registerDeviceToken);
 router.delete('/device-tokens/:token', isAuthorized, unregisterDeviceToken);
+// Crowdsourced restaurant menus, keyed off Google Places place_id.
+// Item routes use the opaque public_id, not the serial id.
+router.get('/menu/:placeId', isAuthorized, listMenu);
+router.post('/menu/:placeId/item', isAuthorized, addMenuItem);
+router.put('/menu/item/:id', isAuthorized, updateMenuItem);
+router.post('/menu/item/:id/flag', isAuthorized, flagMenuItem);
+router.post('/menu/item/:id/verify', isAuthorized, verifyMenuItem);
 router.post('/post', isAuthorized, addPost);
 router.get('/post/:id', isAuthorized, post);
 router.put('/post/:id', isAuthorized, updatePost);
