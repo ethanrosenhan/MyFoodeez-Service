@@ -2,7 +2,7 @@ import { models } from '../utils/database.js';
 import Sequelize from 'sequelize';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
-import { getPostAccessWhere, mapOwnerSummary } from '../lib/social-helper.js';
+import { getPostAccessWhere, loadCollabStateForPosts, mapOwnerSummary } from '../lib/social-helper.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
 import { loadStarStateForPosts } from './stars.js';
 
@@ -20,7 +20,7 @@ const buildPostImageUrls = (postId, imageCount) => {
     return [`/post/image/${postId}`];
 };
 
-const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false) => {
+const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false, isCollaborator = false, collaboratorCount = 0) => {
     const imageUrls = buildPostImageUrls(post.id, imageCount);
     return {
         id: post.id,
@@ -40,7 +40,10 @@ const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isSta
         is_mine: post.user_id === requestUserId,
         owner: mapOwnerSummary(post.user),
         star_count: starCount,
-        is_starred_by_me: isStarredByMe
+        is_starred_by_me: isStarredByMe,
+        // Collab: am I a tagged collaborator, and how many collaborators total.
+        is_collaborator: isCollaborator,
+        collaborator_count: collaboratorCount
     };
 };
 
@@ -130,9 +133,10 @@ const search = async (request, response) => {
         });
 
         const postIds = posts.map((p) => p.id);
-        const [imageCounts, starState] = await Promise.all([
+        const [imageCounts, starState, collabState] = await Promise.all([
             loadImageCountsForPosts(postIds),
-            loadStarStateForPosts(postIds, request.user.id)
+            loadStarStateForPosts(postIds, request.user.id),
+            loadCollabStateForPosts(postIds, request.user.id)
         ]);
 
         return sendSuccess(response, 200, {
@@ -141,7 +145,9 @@ const search = async (request, response) => {
                 request.user.id,
                 imageCounts.get(post.id) || 0,
                 starState.counts.get(post.id) || 0,
-                starState.mineSet.has(post.id)
+                starState.mineSet.has(post.id),
+                collabState.mineSet.has(post.id),
+                collabState.counts.get(post.id) || 0
             ))
         });
     } catch (error) {
@@ -305,9 +311,10 @@ const feed = async (request, response) => {
         });
 
         const postIds = posts.map((p) => p.id);
-        const [imageCounts, starState] = await Promise.all([
+        const [imageCounts, starState, collabState] = await Promise.all([
             loadImageCountsForPosts(postIds),
-            loadStarStateForPosts(postIds, request.user.id)
+            loadStarStateForPosts(postIds, request.user.id),
+            loadCollabStateForPosts(postIds, request.user.id)
         ]);
 
         return sendSuccess(response, 200, {
@@ -316,7 +323,9 @@ const feed = async (request, response) => {
                 request.user.id,
                 imageCounts.get(post.id) || 0,
                 starState.counts.get(post.id) || 0,
-                starState.mineSet.has(post.id)
+                starState.mineSet.has(post.id),
+                collabState.mineSet.has(post.id),
+                collabState.counts.get(post.id) || 0
             ))
         });
     } catch (error) {

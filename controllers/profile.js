@@ -3,7 +3,7 @@ import { models } from '../utils/database.js';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import Sequelize from 'sequelize';
-import { FRIENDSHIP_ACCEPTED, normalizeFriendPair } from '../lib/social-helper.js';
+import { FRIENDSHIP_ACCEPTED, getCollabPostIds, normalizeFriendPair } from '../lib/social-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 
 const Op = Sequelize.Op;
@@ -34,8 +34,9 @@ const info = async (request, response) => {
     log(request, '/profile/info', { email: request.user.email });
     try {
         const user = await models.user.findOne({ where: { email: request.user.email } });
-        const [postsCount, friendsCount] = await Promise.all([
+        const [authoredCount, collabPostIds, friendsCount] = await Promise.all([
             models.post.count({ where: { user_id: user.id } }),
+            getCollabPostIds(user.id),
             models.friendship.count({
                 where: {
                     status: FRIENDSHIP_ACCEPTED,
@@ -46,6 +47,8 @@ const info = async (request, response) => {
                 }
             })
         ]);
+        // Profile grid shows my posts + posts I'm tagged in, so count both.
+        const postsCount = authoredCount + collabPostIds.length;
         return sendSuccess(response, 200, {
             id: user.id,
             email: user.email,

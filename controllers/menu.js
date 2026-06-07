@@ -239,6 +239,25 @@ const verifyMenuItem = async (request, response) => {
     }
 };
 
+// DELETE /menu/item/:id — soft delete. Any authed user can remove an item
+// (open moderation for now). SOFT delete only: status -> 'removed' so the item
+// drops out of the active list while price/trend history is preserved. Never
+// hard-deletes the row.
+const removeMenuItem = async (request, response) => {
+    try {
+        const row = await findByPublicId(request.params.id);
+        if (!row || row.status === 'removed') {
+            return sendError(response, 404, 'Menu item not found', 'menu_item_not_found');
+        }
+        await row.update({ status: 'removed' });
+        await log(request, '/menu/item', { action: 'remove', public_id: row.public_id });
+        return sendSuccess(response, 200, { id: row.public_id, status: 'removed' });
+    } catch (error) {
+        console.error('removeMenuItem failed', error);
+        return sendError(response, 500, 'Unable to remove menu item', 'menu_remove_failed');
+    }
+};
+
 // ── Phase 2 — Claude Vision menu parser ─────────────────────────────────────
 //
 // A user photographs (or uploads a PDF of) a physical menu; we send it to the
@@ -355,6 +374,23 @@ const extractJsonArray = (text) => {
     return null;
 };
 
+// Sniff the image media_type from the base64 bytes so the block we send Claude
+// matches the actual data (the app uploads JPEG; older builds may send PNG).
+const detectImageMediaType = (base64) => {
+    try {
+        const head = Buffer.from(base64.slice(0, 16), 'base64');
+        if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) {
+            return 'image/jpeg';
+        }
+        if (head.length >= 8 && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) {
+            return 'image/png';
+        }
+    } catch (_) {
+        // fall through to default
+    }
+    return 'image/jpeg';
+};
+
 // Pull the concatenated text out of an Anthropic Messages response.
 const responseText = (message) => {
     if (!message || !Array.isArray(message.content)) {
@@ -399,7 +435,7 @@ const parseMenu = async (request, response) => {
     // text nudge with the restaurant name for context.
     const userContent = images.map((data) => ({
         type: 'image',
-        source: { type: 'base64', media_type: 'image/png', data }
+        source: { type: 'base64', media_type: detectImageMediaType(data), data }
     }));
     if (pdf) {
         userContent.push({
@@ -518,6 +554,7 @@ export {
     updateMenuItem,
     flagMenuItem,
     verifyMenuItem,
+    removeMenuItem,
     parseMenu,
     // exported for unit tests
     groupBySection,

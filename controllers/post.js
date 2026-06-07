@@ -3,11 +3,13 @@ import { IncomingForm } from 'formidable';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
-import { canViewPostRecord, mapOwnerSummary } from '../lib/social-helper.js';
+import { canViewPostRecord, getAcceptedFriendIds, mapOwnerSummary, mapUserSummary } from '../lib/social-helper.js';
 import { loadStarSummary } from './stars.js';
-import { notifyFriendsOfPostAtPlace } from '../lib/notifications.js';
+import { notifyFriendsOfPostAtPlace, notifyCollaboratorsTagged } from '../lib/notifications.js';
 
 const MAX_IMAGES_PER_POST = 5;
+// "A handful" of people can share one collab post.
+const MAX_COLLABORATORS = 8;
 
 const normalizeFields = (fields) => {
     const normalized = {};
@@ -25,8 +27,12 @@ const parsePostRequest = async (request) => {
     if (contentType.includes('application/json')) {
         return normalizeFields(request.body);
     }
-    const form = new IncomingForm();
-    form.keepExtensions = true;
+    // Base64 images are sent as multipart *fields* (FormData string parts), so
+    // the relevant cap is maxFieldsSize. formidable defaults it to 20MB across
+    // all fields combined — raise it so a 5-photo post can't silently trip a
+    // "maxFieldsSize exceeded" error. (Photos are JPEG-compressed client-side,
+    // so a 5-photo post is now only a couple of MB; this is headroom.)
+    const form = new IncomingForm({ keepExtensions: true, maxFieldsSize: 50 * 1024 * 1024 });
     const [fields] = await form.parse(request);
     return normalizeFields(fields);
 };
@@ -107,22 +113,129 @@ const parseFieldsToPostValues = (fields, existingPost = null) => {
     };
 };
 
-// The client references a menu item by its opaque public_id (never the serial
-// FK). Resolve it to the internal menu_item.id here so the post FK stays a real
-// integer and public_id remains opaque to clients.
-//   - field absent  -> on create: null; on update: undefined (leave unchanged)
-//   - field empty    -> explicit clear (null)
-//   - field a UUID   -> resolved internal id, or null if it doesn't exist
-const resolveMenuItemId = async (fields, existingPost = null) => {
-    if (!Object.prototype.hasOwnProperty.call(fields, 'menu_item_id')) {
-        return existingPost ? undefined : null;
+// The client references menu items by their opaque public_id (never the serial
+// FK). Resolve them to internal menu_item.id values so the join table stays
+// real integers and public_id remains opaque to clients. Returns an ORDERED,
+// de-duplicated array of internal ids.
+//   - menu_item_ids present (new multi-select clients) -> JSON array of public_ids
+//   - menu_item_id present  (legacy single-select clients) -> one public_id
+//   - neither present       -> on create: []; on update: undefined (unchanged)
+//   - empty/unknown ids      -> dropped
+const resolveMenuItemIds = async (fields, existingPost = null) => {
+    let publicIds = null;
+
+    if (Object.prototype.hasOwnProperty.call(fields, 'menu_item_ids')) {
+        publicIds = [];
+        try {
+            const parsed = JSON.parse(fields.menu_item_ids);
+            if (Array.isArray(parsed)) {
+                publicIds = parsed.filter((value) => typeof value === 'string' && value.trim().length > 0);
+            }
+        } catch (error) {
+            publicIds = [];
+        }
+    } else if (Object.prototype.hasOwnProperty.call(fields, 'menu_item_id')) {
+        // Legacy single-item field.
+        const publicId = toNullableString(fields.menu_item_id);
+        publicIds = publicId ? [publicId] : [];
     }
-    const publicId = toNullableString(fields.menu_item_id);
-    if (!publicId) {
-        return null;
+
+    if (publicIds === null) {
+        // Field absent entirely: leave unchanged on update, none on create.
+        return existingPost ? undefined : [];
     }
-    const item = await models.menu_item.findOne({ attributes: ['id'], where: { public_id: publicId } });
-    return item ? item.id : null;
+    if (publicIds.length === 0) {
+        return [];
+    }
+
+    const rows = await models.menu_item.findAll({
+        attributes: ['id', 'public_id'],
+        where: { public_id: publicIds }
+    });
+    const internalByPublic = new Map(rows.map((row) => [row.public_id, row.id]));
+
+    // Preserve the client's order, drop unknowns, de-dupe.
+    const seen = new Set();
+    const ids = [];
+    for (const publicId of publicIds) {
+        const internalId = internalByPublic.get(publicId);
+        if (internalId && !seen.has(internalId)) {
+            seen.add(internalId);
+            ids.push(internalId);
+        }
+    }
+    return ids;
+};
+
+// Replace a post's linked menu items with the given ordered internal ids.
+const syncPostMenuItems = async (postId, internalIds) => {
+    await models.post_menu_item.destroy({ where: { post_id: postId } });
+    if (!internalIds || internalIds.length === 0) {
+        return;
+    }
+    const rows = internalIds.map((menu_item_id, idx) => ({
+        post_id: postId,
+        menu_item_id,
+        sort_order: idx
+    }));
+    await models.post_menu_item.bulkCreate(rows);
+};
+
+// Resolve the tagged collaborator user ids from the client payload. Only the
+// author's ACCEPTED FRIENDS can be tagged (you can't tag a stranger), the
+// author themselves is excluded, and the set is capped + de-duped.
+//   - field absent -> on create: []; on update: undefined (leave unchanged)
+const resolveCollaboratorUserIds = async (fields, authorId, existingPost = null) => {
+    if (!Object.prototype.hasOwnProperty.call(fields, 'collaborator_user_ids')) {
+        return existingPost ? undefined : [];
+    }
+    let ids = [];
+    try {
+        const parsed = JSON.parse(fields.collaborator_user_ids);
+        if (Array.isArray(parsed)) {
+            ids = parsed
+                .map((value) => Number(value))
+                .filter((value) => Number.isInteger(value) && value > 0 && value !== authorId);
+        }
+    } catch (error) {
+        ids = [];
+    }
+    if (ids.length === 0) {
+        return [];
+    }
+    const friendIds = new Set(await getAcceptedFriendIds(authorId));
+    const seen = new Set();
+    const result = [];
+    for (const id of ids) {
+        if (friendIds.has(id) && !seen.has(id)) {
+            seen.add(id);
+            result.push(id);
+        }
+    }
+    return result.slice(0, MAX_COLLABORATORS);
+};
+
+// Reconcile a post's collaborator set. Returns the newly-added user ids (for
+// notifications). Author untags become 'removed'; self-removed rows are left
+// untouched so re-tagging doesn't override someone who opted out.
+const syncPostCollaborators = async (postId, userIds) => {
+    const existing = await models.post_collaborator.findAll({ where: { post_id: postId } });
+    const existingByUser = new Map(existing.map((row) => [row.user_id, row]));
+    const desired = new Set(userIds);
+
+    for (const row of existing) {
+        if (row.status === 'active' && !desired.has(row.user_id)) {
+            await row.update({ status: 'removed' });
+        }
+    }
+
+    const newUserIds = userIds.filter((id) => !existingByUser.has(id));
+    if (newUserIds.length > 0) {
+        await models.post_collaborator.bulkCreate(
+            newUserIds.map((user_id) => ({ post_id: postId, user_id, status: 'active' }))
+        );
+    }
+    return newUserIds;
 };
 
 const collectImageBase64s = (fields) => {
@@ -155,14 +268,31 @@ const parseKeptImageIds = (fields) => {
     }
 };
 
+// Sniff the real format from the decoded bytes so the stored Content-Type
+// matches what the client sent. The app now uploads JPEG; older posts/clients
+// may still send PNG, and we don't want to mislabel either.
+const detectImageMime = (buffer) => {
+    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+        return 'image/jpeg';
+    }
+    if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+        return 'image/png';
+    }
+    return 'image/jpeg';
+};
+
 const createPostImages = async (postId, base64Images, startingOrder = 0) => {
-    const rows = base64Images.map((base64, idx) => ({
-        post_id: postId,
-        image_data: Buffer.from(base64, 'base64'),
-        image_type: 'image/png',
-        image_name: 'meal.png',
-        sort_order: startingOrder + idx
-    }));
+    const rows = base64Images.map((base64, idx) => {
+        const buffer = Buffer.from(base64, 'base64');
+        const mime = detectImageMime(buffer);
+        return {
+            post_id: postId,
+            image_data: buffer,
+            image_type: mime,
+            image_name: mime === 'image/png' ? 'meal.png' : 'meal.jpg',
+            sort_order: startingOrder + idx
+        };
+    });
     if (rows.length === 0) {
         return;
     }
@@ -173,15 +303,35 @@ const addPost = async (request, response) => {
     try {
         const fields = await parsePostRequest(request);
         const values = parseFieldsToPostValues(fields);
-        const menu_item_id = await resolveMenuItemId(fields);
+        const menuItemIds = await resolveMenuItemIds(fields);
         const images = collectImageBase64s(fields);
 
         const post = await models.post.create({
             ...values,
-            menu_item_id,
+            // Keep the legacy single column in sync with the first ordered item.
+            menu_item_id: menuItemIds?.[0] ?? null,
             post_date: new Date(),
             user_id: request.user.id
         });
+
+        if (Array.isArray(menuItemIds) && menuItemIds.length > 0) {
+            await syncPostMenuItems(post.id, menuItemIds);
+        }
+
+        // Tag collaborators (collab post) and notify them.
+        const collaboratorUserIds = await resolveCollaboratorUserIds(fields, request.user.id);
+        if (Array.isArray(collaboratorUserIds) && collaboratorUserIds.length > 0) {
+            const added = await syncPostCollaborators(post.id, collaboratorUserIds);
+            if (added.length > 0) {
+                notifyCollaboratorsTagged({
+                    authorUserId: request.user.id,
+                    collaboratorUserIds: added,
+                    place: post.place
+                }).catch((error) => {
+                    console.warn('collab tag notification failed', error?.message || error);
+                });
+            }
+        }
 
         if (images.length > 0) {
             await createPostImages(post.id, images, 0);
@@ -255,12 +405,31 @@ const updatePostWithFields = async (request, response, fields) => {
     }
 
     const updates = parseFieldsToPostValues(fields, post);
-    const menu_item_id = await resolveMenuItemId(fields, post);
-    if (menu_item_id !== undefined) {
-        updates.menu_item_id = menu_item_id;
+    const menuItemIds = await resolveMenuItemIds(fields, post);
+    if (menuItemIds !== undefined) {
+        // Keep the legacy single column in sync with the first ordered item.
+        updates.menu_item_id = menuItemIds[0] ?? null;
     }
 
     await post.update(updates);
+
+    if (menuItemIds !== undefined) {
+        await syncPostMenuItems(post.id, menuItemIds);
+    }
+
+    const collaboratorUserIds = await resolveCollaboratorUserIds(fields, request.user.id, post);
+    if (collaboratorUserIds !== undefined) {
+        const added = await syncPostCollaborators(post.id, collaboratorUserIds);
+        if (added.length > 0) {
+            notifyCollaboratorsTagged({
+                authorUserId: request.user.id,
+                collaboratorUserIds: added,
+                place: post.place
+            }).catch((error) => {
+                console.warn('collab tag notification failed', error?.message || error);
+            });
+        }
+    }
 
     const keptImageIds = parseKeptImageIds(fields);
     const newImages = collectImageBase64s(fields);
@@ -294,6 +463,8 @@ const deletePost = async (request, response) => {
         }
 
         await models.post_image.destroy({ where: { post_id: post.id } });
+        await models.post_menu_item.destroy({ where: { post_id: post.id } });
+        await models.post_collaborator.destroy({ where: { post_id: post.id } });
         await post.destroy();
         return sendSuccess(response, 200, { deleted: true });
     } catch (error) {
@@ -457,7 +628,7 @@ const post = async (request, response) => {
             where: { id: request.params.id },
             include: [
                 { model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] },
-                { model: models.menu_item, required: false, attributes: ['public_id', 'name', 'price_text', 'cuisine_id'] }
+                { model: models.menu_item, required: false, attributes: ['public_id', 'name', 'price_text', 'cuisine_id', 'section'] }
             ]
         });
 
@@ -474,6 +645,53 @@ const post = async (request, response) => {
 
         const starSummary = await loadStarSummary(postRecord.id, request.user.id);
 
+        // All ordered dishes for this post, via the join table.
+        const linkRows = await models.post_menu_item.findAll({
+            where: { post_id: postRecord.id },
+            attributes: ['sort_order'],
+            include: [{ model: models.menu_item, attributes: ['public_id', 'name', 'price_text', 'cuisine_id', 'section'] }],
+            order: [['sort_order', 'ASC'], ['id', 'ASC']]
+        });
+        let menuItems = linkRows
+            .filter((row) => row.menu_item)
+            .map((row) => ({
+                id: row.menu_item.public_id,
+                name: row.menu_item.name,
+                price_text: row.menu_item.price_text,
+                cuisine_id: row.menu_item.cuisine_id,
+                section: row.menu_item.section
+            }));
+        // Fallback for posts not yet backfilled: surface the legacy single link.
+        if (menuItems.length === 0 && postRecord.menu_item) {
+            menuItems = [{
+                id: postRecord.menu_item.public_id,
+                name: postRecord.menu_item.name,
+                price_text: postRecord.menu_item.price_text,
+                cuisine_id: postRecord.menu_item.cuisine_id,
+                section: postRecord.menu_item.section
+            }];
+        }
+
+        // Collaborators (collab post) with their own rating/notes.
+        const collabRows = await models.post_collaborator.findAll({
+            where: { post_id: postRecord.id, status: 'active' },
+            attributes: ['user_id', 'rating', 'comments'],
+            include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
+            order: [['created_at', 'ASC'], ['id', 'ASC']]
+        });
+        const collaborators = collabRows
+            .filter((row) => row.user)
+            .map((row) => ({
+                user: mapUserSummary(row.user),
+                rating: row.rating,
+                comments: row.comments,
+                is_me: row.user_id === request.user.id
+            }));
+        const myCollabRow = collabRows.find((row) => row.user_id === request.user.id) || null;
+        const myCollab = myCollabRow
+            ? { rating: myCollabRow.rating, comments: myCollabRow.comments }
+            : null;
+
         return sendSuccess(response, 200, {
             id: postRecord.id,
             post_date: postRecord.post_date,
@@ -489,12 +707,13 @@ const post = async (request, response) => {
             image_url: imageUrls[0] || null,
             image_urls: imageUrls,
             image_ids: imageIds,
-            menu_item: postRecord.menu_item ? {
-                id: postRecord.menu_item.public_id,
-                name: postRecord.menu_item.name,
-                price_text: postRecord.menu_item.price_text,
-                cuisine_id: postRecord.menu_item.cuisine_id
-            } : null,
+            // New multi-item array; menu_item kept as the first for older app builds.
+            menu_items: menuItems,
+            menu_item: menuItems[0] || null,
+            // Collab post: everyone tagged, plus my own take (if I'm tagged).
+            collaborators,
+            my_collab: myCollab,
+            is_collaborator: Boolean(myCollabRow),
             is_private: postRecord.is_private,
             is_mine: postRecord.user_id === request.user.id,
             owner: mapOwnerSummary(postRecord.user),
@@ -507,4 +726,46 @@ const post = async (request, response) => {
     }
 };
 
-export { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, MAX_IMAGES_PER_POST };
+// PUT /post/:id/collab — a tagged collaborator sets their OWN rating/notes.
+const updateCollaboration = async (request, response) => {
+    try {
+        const row = await models.post_collaborator.findOne({
+            where: { post_id: request.params.id, user_id: request.user.id, status: 'active' }
+        });
+        if (!row) {
+            return sendError(response, 404, 'You are not tagged on this post', 'collab_not_found');
+        }
+        const body = request.body || {};
+        const updates = {};
+        if (body.rating !== undefined) {
+            updates.rating = toNullableString(body.rating);
+        }
+        if (body.comments !== undefined) {
+            updates.comments = typeof body.comments === 'string' ? body.comments.trim() : null;
+        }
+        await row.update(updates);
+        return sendSuccess(response, 200, { rating: row.rating, comments: row.comments });
+    } catch (error) {
+        console.error('updateCollaboration failed', error);
+        return sendError(response, 500, 'Unable to update your take', 'collab_update_failed');
+    }
+};
+
+// DELETE /post/:id/collab — a collaborator removes themselves (self un-tag).
+const leaveCollaboration = async (request, response) => {
+    try {
+        const row = await models.post_collaborator.findOne({
+            where: { post_id: request.params.id, user_id: request.user.id, status: 'active' }
+        });
+        if (!row) {
+            return sendError(response, 404, 'You are not tagged on this post', 'collab_not_found');
+        }
+        await row.update({ status: 'removed' });
+        return sendSuccess(response, 200, { left: true });
+    } catch (error) {
+        console.error('leaveCollaboration failed', error);
+        return sendError(response, 500, 'Unable to remove yourself', 'collab_leave_failed');
+    }
+};
+
+export { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, MAX_IMAGES_PER_POST, resolveMenuItemIds, resolveCollaboratorUserIds };

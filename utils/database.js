@@ -11,6 +11,8 @@ import friendship from '../models/friendship.js'
 import user_place_intent from '../models/user_place_intent.js'
 import device_token from '../models/device_token.js'
 import menu_item from '../models/menu_item.js'
+import post_menu_item from '../models/post_menu_item.js'
+import post_collaborator from '../models/post_collaborator.js'
 import {applyExtraSetup} from './extra-setup.js';
 
 let dboptions = {
@@ -41,7 +43,9 @@ const modelDefiners = [
     friendship,
     user_place_intent,
     device_token,
-    menu_item
+    menu_item,
+    post_menu_item,
+    post_collaborator
 ];
 
 for (const modelDefiner of modelDefiners) {

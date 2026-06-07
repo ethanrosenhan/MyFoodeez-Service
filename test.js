@@ -17,6 +17,7 @@ const {
 const {
     listMenu,
     flagMenuItem,
+    removeMenuItem,
     parseMenu,
     groupBySection,
     normalizeName,
@@ -25,6 +26,7 @@ const {
     __setAnthropicClientForTests,
     FLAG_THRESHOLD
 } = await import('./controllers/menu.js');
+const { resolveMenuItemIds, resolveCollaboratorUserIds } = await import('./controllers/post.js');
 
 // Minimal Express response double that records status + json payload.
 const makeRes = () => {
@@ -72,7 +74,9 @@ test('post access allows owner and accepted friends but blocks private friend po
 
 test('post search scopes default to mine and restrict friends to shared posts', async (t) => {
     const originalFindAll = models.friendship.findAll;
+    const originalCollabFindAll = models.post_collaborator.findAll;
     models.friendship.findAll = async () => ([{ user_one_id: 1, user_two_id: 2 }]);
+    models.post_collaborator.findAll = async () => ([]); // no collab posts
 
     t.deepEqual(await getPostAccessWhere(1), { user_id: 1 }, 'default scope stays personal');
     t.deepEqual(await getPostAccessWhere(1, 'friends'), {
@@ -82,6 +86,50 @@ test('post search scopes default to mine and restrict friends to shared posts', 
 
     const allScope = await getPostAccessWhere(1, 'all');
     t.equal(Array.isArray(allScope[Sequelize.Op.or]), true, 'all scope combines mine and shared friend posts');
+
+    models.friendship.findAll = originalFindAll;
+    models.post_collaborator.findAll = originalCollabFindAll;
+    t.end();
+});
+
+test('post access includes posts I am tagged in (mine scope ORs collab post ids)', async (t) => {
+    const originalFindAll = models.friendship.findAll;
+    const originalCollabFindAll = models.post_collaborator.findAll;
+    models.friendship.findAll = async () => ([]); // no friends
+    models.post_collaborator.findAll = async () => ([{ post_id: 50 }]); // tagged on post 50
+
+    const where = await getPostAccessWhere(1, 'mine');
+    const orClauses = where[Sequelize.Op.or];
+    t.equal(Array.isArray(orClauses), true, 'mine scope becomes an OR when I have collab posts');
+    t.deepEqual(orClauses[0], { user_id: 1 }, 'still includes my own posts');
+    t.deepEqual(orClauses[1], { id: { [Sequelize.Op.in]: [50] } }, 'plus posts I am tagged in');
+
+    models.friendship.findAll = originalFindAll;
+    models.post_collaborator.findAll = originalCollabFindAll;
+    t.end();
+});
+
+test('post resolveCollaboratorUserIds keeps only accepted friends, de-duped, author excluded', async (t) => {
+    const originalFindAll = models.friendship.findAll;
+    // Author is user 1; accepted friends are 2 and 3.
+    models.friendship.findAll = async () => ([
+        { user_one_id: 1, user_two_id: 2 },
+        { user_one_id: 3, user_two_id: 1 }
+    ]);
+
+    // 2,3 are friends; 2 duplicated; 99 is a stranger; 1 is the author.
+    t.deepEqual(
+        await resolveCollaboratorUserIds({ collaborator_user_ids: JSON.stringify([2, 3, 2, 99, 1]) }, 1),
+        [2, 3],
+        'friends only, de-duped, stranger + author dropped'
+    );
+
+    // Absent field: [] on create, undefined on update.
+    t.deepEqual(await resolveCollaboratorUserIds({}, 1), [], 'absent on create -> []');
+    t.equal(await resolveCollaboratorUserIds({}, 1, { id: 5 }), undefined, 'absent on update -> undefined');
+
+    // Empty array clears.
+    t.deepEqual(await resolveCollaboratorUserIds({ collaborator_user_ids: '[]' }, 1), [], 'empty clears');
 
     models.friendship.findAll = originalFindAll;
     t.end();
@@ -164,6 +212,61 @@ test('menu flagMenuItem hides an item once it reaches the flag threshold', async
     await flagMenuItem({ params: { id: 'p1' } }, res);
     t.equal(res.body.flag_count, FLAG_THRESHOLD);
     t.equal(res.body.status, 'flagged', 'dropped from default list at threshold');
+
+    models.menu_item.findOne = original;
+    t.end();
+});
+
+test('post resolveMenuItemIds maps public_ids to ordered, de-duped internal ids', async (t) => {
+    const original = models.menu_item.findAll;
+    // public_id -> internal id lookup table for the mock.
+    const table = { 'pub-a': 11, 'pub-b': 22, 'pub-c': 33 };
+    models.menu_item.findAll = async ({ where }) => where.public_id
+        .filter((pid) => table[pid] !== undefined)
+        .map((pid) => ({ id: table[pid], public_id: pid }));
+
+    // Multi-select path: order preserved, duplicates and unknowns dropped.
+    t.deepEqual(
+        await resolveMenuItemIds({ menu_item_ids: JSON.stringify(['pub-b', 'pub-a', 'pub-b', 'nope']) }),
+        [22, 11],
+        'ordered + de-duped + unknown dropped'
+    );
+
+    // Legacy single field still works.
+    t.deepEqual(await resolveMenuItemIds({ menu_item_id: 'pub-c' }), [33], 'legacy single id resolves');
+
+    // Empty array clears selection.
+    t.deepEqual(await resolveMenuItemIds({ menu_item_ids: '[]' }), [], 'empty array clears');
+
+    // Field absent: [] on create, undefined on update (leave unchanged).
+    t.deepEqual(await resolveMenuItemIds({}), [], 'absent on create -> []');
+    t.equal(await resolveMenuItemIds({}, { id: 1 }), undefined, 'absent on update -> undefined (unchanged)');
+
+    models.menu_item.findAll = original;
+    t.end();
+});
+
+test('menu removeMenuItem soft-deletes (status removed) and never hard-deletes', async (t) => {
+    const original = models.menu_item.findOne;
+    const row = { public_id: 'p9', status: 'active' };
+    let destroyed = false;
+    row.update = async (changes) => { Object.assign(row, changes); return row; };
+    row.destroy = async () => { destroyed = true; };
+    models.menu_item.findOne = async () => row;
+
+    const res = makeRes();
+    await removeMenuItem({ params: { id: 'p9' } }, res);
+
+    t.equal(res.statusCode, 200);
+    t.equal(res.body.status, 'removed', 'item is marked removed');
+    t.equal(res.body.id, 'p9', 'response echoes the public_id');
+    t.equal(row.status, 'removed', 'status flipped on the row');
+    t.equal(destroyed, false, 'row is soft-deleted, never hard-deleted');
+
+    // A second delete on an already-removed item 404s (idempotent-ish).
+    const res2 = makeRes();
+    await removeMenuItem({ params: { id: 'p9' } }, res2);
+    t.equal(res2.statusCode, 404, 'already-removed item is treated as not found');
 
     models.menu_item.findOne = original;
     t.end();
