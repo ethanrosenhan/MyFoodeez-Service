@@ -5,6 +5,12 @@ const requiredEnvironmentVariables = [
 ];
 
 const optionalEnvironmentVariables = {
+    // Transactional email is sent via Resend (lib/email-helper.js). When unset
+    // the service still boots; emails are simply skipped. The from-domain must
+    // be verified in Resend.
+    RESEND_API_KEY: '',
+    // Mailgun is deprecated (replaced by Resend) — kept only so any old
+    // references resolve to empty rather than undefined.
     MAILGUN_API_KEY: '',
     MAILGUN_DOMAIN: 'myfoodeez.com',
     // Transactional sender. Defaults to the support mailbox so a misconfigured

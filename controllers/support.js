@@ -1,8 +1,6 @@
-import formData from 'form-data';
-import Mailgun from 'mailgun.js';
 import { sendError } from '../lib/response-helper.js';
-
-const mailgun = new Mailgun(formData);
+import { getOptionalEnv } from '../utils/env.js';
+import { isEmailConfigured, sendEmail } from '../lib/email-helper.js';
 
 const supportPage = async (request, response) => {
     return response.status(200).send(`
@@ -58,14 +56,16 @@ const supportSubmit = async (request, response) => {
         return sendError(response, 400, 'Email and message are required', 'invalid_request');
     }
 
-    if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN && process.env.SUPPORT_RECEIVED_TO_EMAIL) {
-        const mg = mailgun.client({ username: 'api', key: process.env.MAILGUN_API_KEY });
-        await mg.messages.create(process.env.MAILGUN_DOMAIN, {
-            from: process.env.PASSWORD_CHANGE_FROM_EMAIL || process.env.SIGNUP_FROM_EMAIL,
-            to: process.env.SUPPORT_RECEIVED_TO_EMAIL,
+    const supportToEmail = getOptionalEnv('SUPPORT_RECEIVED_TO_EMAIL');
+    const fromEmail = getOptionalEnv('PASSWORD_CHANGE_FROM_EMAIL') || getOptionalEnv('SIGNUP_FROM_EMAIL');
+    if (isEmailConfigured() && supportToEmail && fromEmail) {
+        // Set reply-to so you can reply straight to the user from your inbox.
+        await sendEmail({
+            from: fromEmail,
+            to: supportToEmail,
             subject: 'MyFoodeez Support Email Received',
             text: `Email: ${email}\nMessage: ${message}`,
-            html: `<p>${email}</p><p>${message}</p>`
+            html: `<p><strong>From:</strong> ${email}</p><p>${message}</p>`
         });
     }
 

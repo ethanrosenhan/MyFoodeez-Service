@@ -4,12 +4,11 @@ import { addMinutes, isAfter } from 'date-fns';
 import EmailValidator from 'email-validator';
 import { Op, Sequelize } from 'sequelize';
 import { getPasswordValidator } from '../lib/password-helper.js';
-import formData from 'form-data';
-import Mailgun from 'mailgun.js';
 import { models } from '../utils/database.js';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { getOptionalEnv } from '../utils/env.js';
+import { isEmailConfigured, sendEmail } from '../lib/email-helper.js';
 import { SIGNUP_CODE_EXPIRES_IN, SIGNUP_SUBJECT } from '../constants/global.js';
 
 const USER_ALREADY_EXISTS_ERROR = 'User already exists';
@@ -19,7 +18,6 @@ const INVALID_CODE_ERROR = 'Invalid code';
 const INVALID_EMAIL_ERROR = 'Invalid email address';
 const EXPIRED_CODE_ERROR = 'Expired code';
 
-const mailgun = new Mailgun(formData);
 const passwordValidator = getPasswordValidator();
 passwordValidator.is().min(8).is().max(100).has().uppercase().has().lowercase().has().digits().has().not().spaces().is().not().oneOf(['Passw0rd', 'Password123']);
 
@@ -60,13 +58,11 @@ const signupStart = async (req, res) => {
             code_expires_at: codeExpires
         });
 
-        const mailgunDomain = getOptionalEnv('MAILGUN_DOMAIN');
         const signupFromEmail = getOptionalEnv('SIGNUP_FROM_EMAIL');
-        if (process.env.MAILGUN_API_KEY && mailgunDomain && signupFromEmail) {
-            const mg = mailgun.client({ username: 'api', key: process.env.MAILGUN_API_KEY });
-            await mg.messages.create(mailgunDomain, {
+        if (isEmailConfigured() && signupFromEmail) {
+            await sendEmail({
                 from: signupFromEmail,
-                to: [signup.email],
+                to: signup.email,
                 subject: SIGNUP_SUBJECT,
                 text: `Verification code: ${signup.code}`,
                 html: `<h2>Verification code</h2><h3>${signup.code}</h3>`

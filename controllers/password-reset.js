@@ -1,14 +1,13 @@
 import randomstring from 'randomstring';
 import { addMinutes, isAfter } from 'date-fns';
 import jwt from 'jsonwebtoken';
-import formData from 'form-data';
-import Mailgun from 'mailgun.js';
 import { Sequelize } from 'sequelize';
 import { models } from '../utils/database.js';
 import { log } from '../lib/log-helper.js';
 import { getPasswordValidator, getPasswordHash } from '../lib/password-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { getOptionalEnv } from '../utils/env.js';
+import { isEmailConfigured, sendEmail } from '../lib/email-helper.js';
 import { PASSWORD_RESET_CODE_EXPIRES_IN, PASSWORD_RESET_SUBJECT, PASSWORD_CHANGE_TOKEN_EXPIRES_IN } from '../constants/global.js';
 
 const INVALID_REQUEST_ERROR = 'Invalid request';
@@ -17,7 +16,6 @@ const INVALID_CODE_ERROR = 'Invalid code';
 const MISSING_EMAIL_ERROR = 'Email address is required';
 const EXPIRED_CODE_ERROR = 'Expired code';
 
-const mailgun = new Mailgun(formData);
 const passwordValidator = getPasswordValidator();
 
 const passwordResetStart = async (req, res) => {
@@ -42,13 +40,11 @@ const passwordResetStart = async (req, res) => {
             code_expires_at: codeExpires
         });
 
-        const mailgunDomain = getOptionalEnv('MAILGUN_DOMAIN');
         const passwordChangeFromEmail = getOptionalEnv('PASSWORD_CHANGE_FROM_EMAIL');
-        if (process.env.MAILGUN_API_KEY && mailgunDomain && passwordChangeFromEmail) {
-            const mg = mailgun.client({ username: 'api', key: process.env.MAILGUN_API_KEY });
-            await mg.messages.create(mailgunDomain, {
+        if (isEmailConfigured() && passwordChangeFromEmail) {
+            await sendEmail({
                 from: passwordChangeFromEmail,
-                to: [passwordResetRecord.email],
+                to: passwordResetRecord.email,
                 subject: PASSWORD_RESET_SUBJECT,
                 text: `Verification code: ${passwordResetRecord.code}`,
                 html: `<h2>Verification code</h2><h3>${passwordResetRecord.code}</h3>`
