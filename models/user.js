@@ -34,6 +34,27 @@ export default (sequelize) => {
         profile_image_type: {
             type: Sequelize.STRING,
             allowNull: true,
+        },
+        // Social sign-in. A user may have a password (email/password signup),
+        // an OAuth provider id, or both (a password user who later links
+        // Google/Apple via the same verified email). auth_provider records the
+        // method used to CREATE the account ('password' | 'google' | 'apple')
+        // — purely informational; linking is keyed off google_id / apple_id.
+        auth_provider: {
+            type: Sequelize.STRING,
+            allowNull: true,
+        },
+        // Google's stable user id ('sub' claim from the verified ID token).
+        google_id: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            unique: true,
+        },
+        // Apple's stable user id ('sub' claim from the verified identity token).
+        apple_id: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            unique: true,
         }
     }, {
         updatedAt: 'updated_at',

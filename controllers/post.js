@@ -6,6 +6,12 @@ import { findById as findCuisineById } from '../constants/cuisines.js';
 import { canViewPostRecord, getAcceptedFriendIds, mapOwnerSummary, mapUserSummary } from '../lib/social-helper.js';
 import { loadStarSummary } from './stars.js';
 import { notifyFriendsOfPostAtPlace, notifyCollaboratorsTagged } from '../lib/notifications.js';
+import {
+    isConfigured as isCloudinaryConfigured,
+    buildVideoUploadSignature,
+    buildThumbnailUrl,
+    deleteVideo
+} from '../lib/cloudinary.js';
 
 const MAX_IMAGES_PER_POST = 5;
 // "A handful" of people can share one collab post.
@@ -299,6 +305,98 @@ const createPostImages = async (postId, base64Images, startingOrder = 0) => {
     await models.post_image.bulkCreate(rows);
 };
 
+// GET /post/media/video-signature — hand the client a signed Cloudinary upload
+// request so it can upload the video DIRECTLY (keeping big payloads off our
+// API). Returns 503 when Cloudinary isn't configured.
+const videoUploadSignature = async (request, response) => {
+    if (!isCloudinaryConfigured()) {
+        return sendError(response, 503, 'Video uploads are not configured', 'video_not_configured');
+    }
+    const signature = buildVideoUploadSignature();
+    if (!signature) {
+        return sendError(response, 503, 'Video uploads are not configured', 'video_not_configured');
+    }
+    return sendSuccess(response, 200, signature);
+};
+
+// Read the video descriptor the client sends after a direct Cloudinary upload.
+// Expected fields (any shape absent => no change):
+//   video_url            Cloudinary secure_url (required to attach a video)
+//   video_public_id      Cloudinary public_id (for later deletion / thumbnails)
+//   video_thumbnail_url  cover frame the user chose; falls back to a generated
+//                        thumbnail from the public_id when omitted
+//   video_thumbnail_offset  seconds, used only for the fallback thumbnail
+//   video_duration       seconds (optional)
+//   remove_video         'true' to detach/delete the existing video (on update)
+const parseVideoDescriptor = (fields) => {
+    if (typeof fields.remove_video === 'string' && ['true', '1', 'yes'].includes(fields.remove_video.toLowerCase())) {
+        return { remove: true };
+    }
+    const url = toNullableString(fields.video_url);
+    if (!url) {
+        return null;
+    }
+    const publicId = toNullableString(fields.video_public_id);
+    const thumbnailUrl = toNullableString(fields.video_thumbnail_url)
+        || buildThumbnailUrl(publicId, fields.video_thumbnail_offset)
+        || null;
+    const duration = Number(fields.video_duration);
+    return {
+        url,
+        provider_public_id: publicId,
+        thumbnail_url: thumbnailUrl,
+        duration: Number.isFinite(duration) ? duration : null
+    };
+};
+
+// Attach / replace / remove a post's single video. Best-effort deletes the
+// previous Cloudinary asset so we don't leak storage.
+const syncPostVideo = async (postId, descriptor) => {
+    if (!descriptor) {
+        return;
+    }
+    const existing = await models.post_media.findAll({ where: { post_id: postId, media_type: 'video' } });
+
+    // Replace or remove both start by clearing whatever's there now.
+    if (existing.length > 0) {
+        for (const row of existing) {
+            if (row.provider_public_id) {
+                deleteVideo(row.provider_public_id).catch(() => {});
+            }
+        }
+        await models.post_media.destroy({ where: { post_id: postId, media_type: 'video' } });
+    }
+
+    if (descriptor.remove) {
+        return;
+    }
+
+    await models.post_media.create({
+        post_id: postId,
+        media_type: 'video',
+        url: descriptor.url,
+        thumbnail_url: descriptor.thumbnail_url,
+        provider_public_id: descriptor.provider_public_id,
+        duration: descriptor.duration,
+        sort_order: 0
+    });
+};
+
+const loadPostVideo = async (postId) => {
+    const row = await models.post_media.findOne({
+        where: { post_id: postId, media_type: 'video' },
+        order: [['sort_order', 'ASC'], ['id', 'ASC']]
+    });
+    if (!row) {
+        return null;
+    }
+    return {
+        url: row.url,
+        thumbnail_url: row.thumbnail_url,
+        duration: row.duration
+    };
+};
+
 const addPost = async (request, response) => {
     try {
         const fields = await parsePostRequest(request);
@@ -336,6 +434,9 @@ const addPost = async (request, response) => {
         if (images.length > 0) {
             await createPostImages(post.id, images, 0);
         }
+
+        // Optional video attached via a prior direct Cloudinary upload.
+        await syncPostVideo(post.id, parseVideoDescriptor(fields));
 
         // Fire-and-forget notification to friends who have also posted at
         // this place. Wrapped so a notification failure can't bubble up and
@@ -442,6 +543,10 @@ const updatePostWithFields = async (request, response, fields) => {
         await reconcilePostImages(post.id, keptImageIds || [], newImages);
     }
 
+    // Attach / replace / remove the post's video, if the client sent a
+    // descriptor (or remove_video).
+    await syncPostVideo(post.id, parseVideoDescriptor(fields));
+
     return sendSuccess(response, 200, { id: post.id, updated: true });
 };
 
@@ -462,7 +567,16 @@ const deletePost = async (request, response) => {
             return sendError(response, 404, 'Post not found', 'post_not_found');
         }
 
+        // Best-effort remove the Cloudinary asset(s) before dropping the rows.
+        const mediaRows = await models.post_media.findAll({ where: { post_id: post.id } });
+        for (const row of mediaRows) {
+            if (row.provider_public_id) {
+                deleteVideo(row.provider_public_id).catch(() => {});
+            }
+        }
+
         await models.post_image.destroy({ where: { post_id: post.id } });
+        await models.post_media.destroy({ where: { post_id: post.id } });
         await models.post_menu_item.destroy({ where: { post_id: post.id } });
         await models.post_collaborator.destroy({ where: { post_id: post.id } });
         await post.destroy();
@@ -644,6 +758,7 @@ const post = async (request, response) => {
         }
 
         const starSummary = await loadStarSummary(postRecord.id, request.user.id);
+        const video = await loadPostVideo(postRecord.id);
 
         // All ordered dishes for this post, via the join table.
         const linkRows = await models.post_menu_item.findAll({
@@ -707,6 +822,9 @@ const post = async (request, response) => {
             image_url: imageUrls[0] || null,
             image_urls: imageUrls,
             image_ids: imageIds,
+            // Optional attached video (Cloudinary). null when the post has none.
+            video,
+            has_video: Boolean(video),
             // New multi-item array; menu_item kept as the first for older app builds.
             menu_items: menuItems,
             menu_item: menuItems[0] || null,
@@ -768,4 +886,4 @@ const leaveCollaboration = async (request, response) => {
     }
 };
 
-export { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, MAX_IMAGES_PER_POST, resolveMenuItemIds, resolveCollaboratorUserIds };
+export { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, videoUploadSignature, MAX_IMAGES_PER_POST, resolveMenuItemIds, resolveCollaboratorUserIds };

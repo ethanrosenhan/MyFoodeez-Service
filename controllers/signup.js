@@ -9,6 +9,7 @@ import Mailgun from 'mailgun.js';
 import { models } from '../utils/database.js';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
+import { getOptionalEnv } from '../utils/env.js';
 import { SIGNUP_CODE_EXPIRES_IN, SIGNUP_SUBJECT } from '../constants/global.js';
 
 const USER_ALREADY_EXISTS_ERROR = 'User already exists';
@@ -59,10 +60,12 @@ const signupStart = async (req, res) => {
             code_expires_at: codeExpires
         });
 
-        if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN && process.env.SIGNUP_FROM_EMAIL) {
+        const mailgunDomain = getOptionalEnv('MAILGUN_DOMAIN');
+        const signupFromEmail = getOptionalEnv('SIGNUP_FROM_EMAIL');
+        if (process.env.MAILGUN_API_KEY && mailgunDomain && signupFromEmail) {
             const mg = mailgun.client({ username: 'api', key: process.env.MAILGUN_API_KEY });
-            await mg.messages.create(process.env.MAILGUN_DOMAIN, {
-                from: process.env.SIGNUP_FROM_EMAIL,
+            await mg.messages.create(mailgunDomain, {
+                from: signupFromEmail,
                 to: [signup.email],
                 subject: SIGNUP_SUBJECT,
                 text: `Verification code: ${signup.code}`,

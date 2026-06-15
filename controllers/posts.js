@@ -20,7 +20,7 @@ const buildPostImageUrls = (postId, imageCount) => {
     return [`/post/image/${postId}`];
 };
 
-const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false, isCollaborator = false, collaboratorCount = 0) => {
+const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false, isCollaborator = false, collaboratorCount = 0, video = null) => {
     const imageUrls = buildPostImageUrls(post.id, imageCount);
     return {
         id: post.id,
@@ -36,6 +36,11 @@ const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isSta
         comments: post.comments,
         image_url: imageUrls[0] || null,
         image_urls: imageUrls,
+        // Video badge/cover for list surfaces. has_video lets the UI show a
+        // play affordance without fetching the full post.
+        has_video: Boolean(video),
+        video_url: video ? video.url : null,
+        video_thumbnail_url: video ? video.thumbnail_url : null,
         is_private: post.is_private,
         is_mine: post.user_id === requestUserId,
         owner: mapOwnerSummary(post.user),
@@ -64,7 +69,33 @@ const loadImageCountsForPosts = async (postIds) => {
     return map;
 };
 
-const normalizeScope = (scope) => ['mine', 'friends', 'all'].includes(scope) ? scope : 'mine';
+// post_id -> { url, thumbnail_url } for any post in the list that has a video.
+const loadVideosForPosts = async (postIds) => {
+    if (postIds.length === 0) {
+        return new Map();
+    }
+    const rows = await models.post_media.findAll({
+        attributes: ['post_id', 'url', 'thumbnail_url'],
+        where: { post_id: { [Op.in]: postIds }, media_type: 'video' },
+        order: [['sort_order', 'ASC'], ['id', 'ASC']],
+        raw: true
+    });
+    const map = new Map();
+    rows.forEach((row) => {
+        const key = Number(row.post_id);
+        if (!map.has(key)) {
+            map.set(key, { url: row.url, thumbnail_url: row.thumbnail_url });
+        }
+    });
+    return map;
+};
+
+const normalizeScope = (scope) => ['mine', 'friends', 'all', 'discover'].includes(scope) ? scope : 'mine';
+
+const numericRating = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
 
 const extractMainText = (place, secondary) => {
     if (typeof place !== 'string' || place.length === 0) {
@@ -133,10 +164,11 @@ const search = async (request, response) => {
         });
 
         const postIds = posts.map((p) => p.id);
-        const [imageCounts, starState, collabState] = await Promise.all([
+        const [imageCounts, starState, collabState, videos] = await Promise.all([
             loadImageCountsForPosts(postIds),
             loadStarStateForPosts(postIds, request.user.id),
-            loadCollabStateForPosts(postIds, request.user.id)
+            loadCollabStateForPosts(postIds, request.user.id),
+            loadVideosForPosts(postIds)
         ]);
 
         return sendSuccess(response, 200, {
@@ -147,7 +179,8 @@ const search = async (request, response) => {
                 starState.counts.get(post.id) || 0,
                 starState.mineSet.has(post.id),
                 collabState.mineSet.has(post.id),
-                collabState.counts.get(post.id) || 0
+                collabState.counts.get(post.id) || 0,
+                videos.get(post.id) || null
             ))
         });
     } catch (error) {
@@ -241,11 +274,21 @@ const places = async (request, response) => {
                     latest_cuisine: post.cuisine,
                     latest_cuisine_id: post.cuisine_id,
                     latest_comments: post.comments,
-                    latest_post_date: post.post_date
+                    latest_post_date: post.post_date,
+                    // Running rating accumulators — finalized into avg_rating
+                    // below. Lets the map pin / detail popup show the average
+                    // score across every review aggregated into this place.
+                    rating_sum: numericRating(post.rating) ?? 0,
+                    rating_count: numericRating(post.rating) === null ? 0 : 1
                 };
                 cuisineTallies[post.place_id] = new Map();
             } else {
                 placesMap[post.place_id].post_count += 1;
+                const r = numericRating(post.rating);
+                if (r !== null) {
+                    placesMap[post.place_id].rating_sum += r;
+                    placesMap[post.place_id].rating_count += 1;
+                }
                 if (postIsMine && !placesMap[post.place_id].is_mine) {
                     placesMap[post.place_id].is_mine = true;
                     placesMap[post.place_id].owner = mapOwnerSummary(post.user);
@@ -276,6 +319,14 @@ const places = async (request, response) => {
             placesMap[placeId].top_cuisine_label = topId
                 ? (findCuisineById(topId)?.label || null)
                 : null;
+            // Finalize the average rating for the place (null when no review
+            // carried a numeric rating). Rounded to one decimal for display.
+            const place = placesMap[placeId];
+            place.avg_rating = place.rating_count > 0
+                ? Math.round((place.rating_sum / place.rating_count) * 10) / 10
+                : null;
+            delete place.rating_sum;
+            delete place.rating_count;
         });
 
         return sendSuccess(response, 200, { data: Object.values(placesMap) });
@@ -311,10 +362,11 @@ const feed = async (request, response) => {
         });
 
         const postIds = posts.map((p) => p.id);
-        const [imageCounts, starState, collabState] = await Promise.all([
+        const [imageCounts, starState, collabState, videos] = await Promise.all([
             loadImageCountsForPosts(postIds),
             loadStarStateForPosts(postIds, request.user.id),
-            loadCollabStateForPosts(postIds, request.user.id)
+            loadCollabStateForPosts(postIds, request.user.id),
+            loadVideosForPosts(postIds)
         ]);
 
         return sendSuccess(response, 200, {
@@ -325,7 +377,8 @@ const feed = async (request, response) => {
                 starState.counts.get(post.id) || 0,
                 starState.mineSet.has(post.id),
                 collabState.mineSet.has(post.id),
-                collabState.counts.get(post.id) || 0
+                collabState.counts.get(post.id) || 0,
+                videos.get(post.id) || null
             ))
         });
     } catch (error) {

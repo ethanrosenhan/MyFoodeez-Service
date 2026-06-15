@@ -1,10 +1,10 @@
 import express from 'express';
 
-import { login, token, isAuthorized } from '../controllers/auth.js';
+import { login, token, isAuthorized, googleLogin, appleLogin } from '../controllers/auth.js';
 import { signupStart, signupFinish } from '../controllers/signup.js';
 import { passwordResetStart, passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
 import { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts } from '../controllers/profile.js';
-import { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration } from '../controllers/post.js';
+import { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, videoUploadSignature } from '../controllers/post.js';
 import { search, places, feed } from '../controllers/posts.js';
 import { list as listCuisines } from '../controllers/cuisines.js';
 import { addStar, removeStar } from '../controllers/stars.js';
@@ -33,6 +33,8 @@ const router = express.Router();
 router.get('/health', health);
 router.get('/version', version);
 router.post('/login', login);
+router.post('/auth/google', googleLogin);
+router.post('/auth/apple', appleLogin);
 router.post('/token', token);
 router.post('/signup-finish', signupFinish);
 router.post('/signup-start', signupStart);
@@ -59,6 +61,8 @@ router.post('/friends/requests/:id/accept', isAuthorized, acceptFriendRequest);
 router.post('/friends/requests/:id/decline', isAuthorized, declineFriendRequest);
 router.delete('/friends/:userId', isAuthorized, removeFriend);
 
+// Signed Cloudinary upload request for direct-from-client video uploads.
+router.get('/post/media/video-signature', isAuthorized, videoUploadSignature);
 router.get('/post/image/:id', isAuthorized, image);
 router.get('/post/:id/image/:index', isAuthorized, imageAtIndex);
 router.get('/posts/search', isAuthorized, search);
