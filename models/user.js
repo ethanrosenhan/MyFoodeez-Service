@@ -55,6 +55,15 @@ export default (sequelize) => {
             type: Sequelize.STRING,
             allowNull: true,
             unique: true,
+        },
+        // Profile visibility. Public profiles (and their non-private posts) are
+        // viewable by anyone in-app; private profiles are viewable by accepted
+        // friends only. Defaults to public so the browse-profiles feature works
+        // out of the box; users can switch to private from Profile settings.
+        is_public: {
+            type: Sequelize.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
         }
     }, {
         updatedAt: 'updated_at',

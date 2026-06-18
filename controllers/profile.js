@@ -57,6 +57,7 @@ const info = async (request, response) => {
             last_name: user.last_name,
             posts_count: postsCount,
             friends_count: friendsCount,
+            is_public: user.is_public !== false,
             has_profile_image: Boolean(user.profile_image_data && user.profile_image_data.length > 0),
             profile_image_url: (user.profile_image_data && user.profile_image_data.length > 0)
                 ? `/profile/image/${user.id}`
@@ -104,18 +105,30 @@ const deleteProfileImage = async (request, response) => {
     }
 };
 
-const canViewProfileImage = async (viewerId, targetUserId) => {
+const areFriends = async (viewerId, targetUserId) => {
     if (viewerId === targetUserId) {
         return true;
     }
     const pair = normalizeFriendPair(viewerId, targetUserId);
     const friendship = await models.friendship.findOne({
-        where: {
-            ...pair,
-            status: FRIENDSHIP_ACCEPTED
-        }
+        where: { ...pair, status: FRIENDSHIP_ACCEPTED }
     });
     return Boolean(friendship);
+};
+
+const canViewProfileImage = async (viewerId, targetUserId) => {
+    if (viewerId === targetUserId) {
+        return true;
+    }
+    // Public profiles expose their avatar to anyone; private ones to friends.
+    const target = await models.user.findOne({
+        attributes: ['id', 'is_public'],
+        where: { id: targetUserId }
+    });
+    if (target && target.is_public !== false) {
+        return true;
+    }
+    return areFriends(viewerId, targetUserId);
 };
 
 const getProfileImage = async (request, response) => {
@@ -173,4 +186,92 @@ const deleteUserAndPosts = async (request, response) => {
     }
 };
 
-export { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts };
+// PUT /profile/privacy — toggle the caller's profile visibility.
+const updatePrivacy = async (request, response) => {
+    try {
+        const fields = await parseFormRequest(request);
+        const raw = fields.is_public;
+        let isPublic;
+        if (typeof raw === 'boolean') {
+            isPublic = raw;
+        } else if (typeof raw === 'string') {
+            isPublic = !['false', '0', 'no'].includes(raw.trim().toLowerCase());
+        } else {
+            return sendError(response, 400, INVALID_REQUEST_ERROR, 'invalid_request');
+        }
+        await models.user.update({ is_public: isPublic }, { where: { id: request.user.id } });
+        return sendSuccess(response, 200, { is_public: isPublic });
+    } catch (error) {
+        console.error('updatePrivacy failed', error);
+        return sendError(response, 500, 'Unable to update profile visibility', 'privacy_update_failed');
+    }
+};
+
+// GET /users/:userId/profile — another user's profile header. Always returns
+// name + counts; `can_view` tells the client whether the post grid is
+// available (true for self, public profiles, or accepted friends).
+const getUserProfile = async (request, response) => {
+    try {
+        const targetId = parseInt(request.params.userId, 10);
+        if (!Number.isInteger(targetId)) {
+            return sendError(response, 400, INVALID_REQUEST_ERROR, 'invalid_request');
+        }
+        const target = await models.user.findOne({
+            attributes: ['id', 'first_name', 'last_name', 'is_public', 'profile_image_data'],
+            where: { id: targetId }
+        });
+        if (!target) {
+            return sendError(response, 404, 'User not found', 'user_not_found');
+        }
+        const isSelf = targetId === request.user.id;
+        // Single friendship lookup powers both the friend flag and the
+        // relationship block the client uses to render the Add/Requested/
+        // Accept/Friends button.
+        const friendshipRow = isSelf
+            ? null
+            : await models.friendship.findOne({ where: normalizeFriendPair(request.user.id, targetId) });
+        const friend = friendshipRow ? friendshipRow.status === FRIENDSHIP_ACCEPTED : false;
+        const relationship = friendshipRow
+            ? {
+                friendship_status: friendshipRow.status,
+                friend_request_id: friendshipRow.id,
+                friend_request_direction: friendshipRow.requester_user_id === request.user.id ? 'outgoing' : 'incoming'
+            }
+            : { friendship_status: null, friend_request_id: null, friend_request_direction: null };
+        const canView = isSelf || target.is_public !== false || friend;
+
+        const [authoredCount, collabPostIds, friendsCount] = await Promise.all([
+            models.post.count({ where: { user_id: targetId } }),
+            getCollabPostIds(targetId),
+            models.friendship.count({
+                where: {
+                    status: FRIENDSHIP_ACCEPTED,
+                    [Op.or]: [{ user_one_id: targetId }, { user_two_id: targetId }]
+                }
+            })
+        ]);
+        const hasImage = Boolean(target.profile_image_data && target.profile_image_data.length > 0);
+
+        return sendSuccess(response, 200, {
+            id: target.id,
+            name: [target.first_name, target.last_name].filter(Boolean).join(' ').trim(),
+            first_name: target.first_name,
+            last_name: target.last_name,
+            is_public: target.is_public !== false,
+            is_self: isSelf,
+            is_friend: friend,
+            relationship,
+            can_view: canView,
+            posts_count: authoredCount + collabPostIds.length,
+            friends_count: friendsCount,
+            has_profile_image: hasImage,
+            // The image endpoint enforces its own access (public or friends).
+            profile_image_url: hasImage ? `/profile/image/${target.id}` : null
+        });
+    } catch (error) {
+        console.error('getUserProfile failed', error);
+        return sendError(response, 500, 'Unable to load profile', 'profile_fetch_failed');
+    }
+};
+
+export { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts, updatePrivacy, getUserProfile };

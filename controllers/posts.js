@@ -2,7 +2,7 @@ import { models } from '../utils/database.js';
 import Sequelize from 'sequelize';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
-import { getPostAccessWhere, loadCollabStateForPosts, mapOwnerSummary } from '../lib/social-helper.js';
+import { getAcceptedFriendIds, getCollabPostIds, getPostAccessWhere, loadCollabRatingsForPosts, loadCollabStateForPosts, mapOwnerSummary } from '../lib/social-helper.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
 import { loadStarStateForPosts } from './stars.js';
 
@@ -20,7 +20,7 @@ const buildPostImageUrls = (postId, imageCount) => {
     return [`/post/image/${postId}`];
 };
 
-const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false, isCollaborator = false, collaboratorCount = 0, video = null) => {
+const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false, isCollaborator = false, collaboratorCount = 0, video = null, collabRatings = []) => {
     const imageUrls = buildPostImageUrls(post.id, imageCount);
     return {
         id: post.id,
@@ -48,7 +48,10 @@ const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isSta
         is_starred_by_me: isStarredByMe,
         // Collab: am I a tagged collaborator, and how many collaborators total.
         is_collaborator: isCollaborator,
-        collaborator_count: collaboratorCount
+        collaborator_count: collaboratorCount,
+        // Active collaborators' own numeric ratings ("Takes"). The restaurant
+        // page folds these into its average alongside the author's `rating`.
+        collab_ratings: Array.isArray(collabRatings) ? collabRatings : []
     };
 };
 
@@ -164,11 +167,12 @@ const search = async (request, response) => {
         });
 
         const postIds = posts.map((p) => p.id);
-        const [imageCounts, starState, collabState, videos] = await Promise.all([
+        const [imageCounts, starState, collabState, videos, collabRatings] = await Promise.all([
             loadImageCountsForPosts(postIds),
             loadStarStateForPosts(postIds, request.user.id),
             loadCollabStateForPosts(postIds, request.user.id),
-            loadVideosForPosts(postIds)
+            loadVideosForPosts(postIds),
+            loadCollabRatingsForPosts(postIds)
         ]);
 
         return sendSuccess(response, 200, {
@@ -180,7 +184,8 @@ const search = async (request, response) => {
                 starState.mineSet.has(post.id),
                 collabState.mineSet.has(post.id),
                 collabState.counts.get(post.id) || 0,
-                videos.get(post.id) || null
+                videos.get(post.id) || null,
+                collabRatings.get(post.id) || []
             ))
         });
     } catch (error) {
@@ -252,6 +257,11 @@ const places = async (request, response) => {
             ? posts.filter((post) => extractRestaurantBaseName(extractMainText(post.place, post.place_secondary_text)).toLowerCase() === baseName.toLowerCase())
             : posts;
 
+        // Collaborators' own ratings ("Takes") per post, folded into each
+        // place's average so the map pin reflects every opinion, not just the
+        // author's. Keyed by post id.
+        const collabRatingsByPost = await loadCollabRatingsForPosts(filteredPosts.map((post) => post.id));
+
         // Aggregate posts into places, and at the same time tally per-place
         // cuisine counts so we can pick a "top cuisine" for the pin. Tie-break
         // by most recent (post_date is already DESC ordered from the query).
@@ -294,6 +304,11 @@ const places = async (request, response) => {
                     placesMap[post.place_id].owner = mapOwnerSummary(post.user);
                 }
             }
+            // Fold this post's collaborator Takes into the place's average.
+            (collabRatingsByPost.get(post.id) || []).forEach((collabRating) => {
+                placesMap[post.place_id].rating_sum += collabRating;
+                placesMap[post.place_id].rating_count += 1;
+            });
             // Tally cuisine_id occurrences for this place. null counts too so
             // we know when "Other / free-text" is the modal cuisine.
             const tally = cuisineTallies[post.place_id];
@@ -362,11 +377,12 @@ const feed = async (request, response) => {
         });
 
         const postIds = posts.map((p) => p.id);
-        const [imageCounts, starState, collabState, videos] = await Promise.all([
+        const [imageCounts, starState, collabState, videos, collabRatings] = await Promise.all([
             loadImageCountsForPosts(postIds),
             loadStarStateForPosts(postIds, request.user.id),
             loadCollabStateForPosts(postIds, request.user.id),
-            loadVideosForPosts(postIds)
+            loadVideosForPosts(postIds),
+            loadCollabRatingsForPosts(postIds)
         ]);
 
         return sendSuccess(response, 200, {
@@ -378,7 +394,8 @@ const feed = async (request, response) => {
                 starState.mineSet.has(post.id),
                 collabState.mineSet.has(post.id),
                 collabState.counts.get(post.id) || 0,
-                videos.get(post.id) || null
+                videos.get(post.id) || null,
+                collabRatings.get(post.id) || []
             ))
         });
     } catch (error) {
@@ -388,4 +405,80 @@ const feed = async (request, response) => {
     }
 };
 
-export { search, places, feed };
+// GET /users/:userId/posts — a specific user's profile grid: posts they
+// authored plus posts they're an active collaborator on. Visible to the
+// target themselves, to friends, and to anyone when the profile is public —
+// in which case only the target's NON-private posts are returned.
+const userPosts = async (request, response) => {
+    try {
+        const targetId = parseInt(request.params.userId, 10);
+        if (!Number.isInteger(targetId)) {
+            return sendError(response, 400, 'Invalid request', 'invalid_request');
+        }
+        const isSelf = targetId === request.user.id;
+        if (!isSelf) {
+            const target = await models.user.findOne({ attributes: ['id', 'is_public'], where: { id: targetId } });
+            if (!target) {
+                return sendError(response, 404, 'User not found', 'user_not_found');
+            }
+            if (target.is_public === false) {
+                const friendIds = await getAcceptedFriendIds(request.user.id);
+                if (!friendIds.includes(targetId)) {
+                    return sendError(response, 403, 'This profile is private', 'profile_private');
+                }
+            }
+        }
+
+        const page = parseInt(request.query.page || 1, 10);
+        const limit = parseInt(request.query.limit || 60, 10);
+        const offset = (page - 1) * limit;
+
+        const collabIds = await getCollabPostIds(targetId);
+        const orClauses = [{ user_id: targetId }];
+        if (collabIds.length > 0) {
+            orClauses.push({ id: { [Op.in]: collabIds } });
+        }
+        const whereClause = { [Op.or]: orClauses };
+        // Non-owners only ever see the target's public posts.
+        if (!isSelf) {
+            whereClause.is_private = false;
+        }
+
+        const posts = await models.post.findAll({
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            where: whereClause,
+            include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
+            limit,
+            offset,
+            order: [['post_date', 'DESC']]
+        });
+
+        const postIds = posts.map((p) => p.id);
+        const [imageCounts, starState, collabState, videos, collabRatings] = await Promise.all([
+            loadImageCountsForPosts(postIds),
+            loadStarStateForPosts(postIds, request.user.id),
+            loadCollabStateForPosts(postIds, request.user.id),
+            loadVideosForPosts(postIds),
+            loadCollabRatingsForPosts(postIds)
+        ]);
+
+        return sendSuccess(response, 200, {
+            data: posts.map((post) => mapPostToListItem(
+                post,
+                request.user.id,
+                imageCounts.get(post.id) || 0,
+                starState.counts.get(post.id) || 0,
+                starState.mineSet.has(post.id),
+                collabState.mineSet.has(post.id),
+                collabState.counts.get(post.id) || 0,
+                videos.get(post.id) || null,
+                collabRatings.get(post.id) || []
+            ))
+        });
+    } catch (error) {
+        console.error('user posts fetch failed', error);
+        return sendError(response, 500, 'Unable to load posts', 'user_posts_fetch_failed');
+    }
+};
+
+export { search, places, feed, userPosts };

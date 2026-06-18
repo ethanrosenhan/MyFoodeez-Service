@@ -1,4 +1,5 @@
 import { models } from '../utils/database.js';
+import { loadCollabRatingsForPosts } from '../lib/social-helper.js';
 
 // Public restaurant page. Unauthenticated SEO surface — lets Google index
 // the data so "best ramen in Tempe"-style searches can land on Foodeez. The
@@ -91,7 +92,14 @@ const renderRestaurantPage = async (request, response) => {
 
         const placeName = posts[0].place || 'Restaurant';
         const placeSecondary = posts[0].place_secondary_text || '';
-        const ratings = posts.map((p) => ratingNumber(p.rating)).filter((r) => r !== null);
+        // Fold collaborators' own Takes into the average alongside each
+        // author's rating, so the headline score reflects everyone who ate
+        // there — not just whoever created the post.
+        const collabRatingsByPost = await loadCollabRatingsForPosts(posts.map((p) => p.id));
+        const ratings = [
+            ...posts.map((p) => ratingNumber(p.rating)),
+            ...posts.flatMap((p) => collabRatingsByPost.get(p.id) || [])
+        ].filter((r) => r !== null);
         const avgRating = ratings.length > 0 ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length : null;
         const cuisines = Array.from(new Set(posts.map((p) => p.cuisine).filter((c) => c && c !== 'Unknown'))).slice(0, 3);
         const reviewsToRender = posts.slice(0, REVIEWS_ON_PAGE);

@@ -3,9 +3,9 @@ import express from 'express';
 import { login, token, isAuthorized, googleLogin, appleLogin } from '../controllers/auth.js';
 import { signupStart, signupFinish } from '../controllers/signup.js';
 import { passwordResetStart, passwordResetVerify, passwordResetChange, isPasswordChangeAuthorized } from '../controllers/password-reset.js';
-import { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts } from '../controllers/profile.js';
+import { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUserAndPosts, updatePrivacy, getUserProfile } from '../controllers/profile.js';
 import { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, videoUploadSignature } from '../controllers/post.js';
-import { search, places, feed } from '../controllers/posts.js';
+import { search, places, feed, userPosts } from '../controllers/posts.js';
 import { list as listCuisines } from '../controllers/cuisines.js';
 import { addStar, removeStar } from '../controllers/stars.js';
 import { addToWishlist, removeFromWishlist, listWishlist, listWishlistPlaces } from '../controllers/wishlist.js';
@@ -54,6 +54,9 @@ router.get('/maps/api/place/autocomplete/json', isAuthorized, proxyGooglePlaces)
 router.get('/maps/api/place/details/json', isAuthorized, proxyGooglePlaces);
 
 router.get('/users/search', isAuthorized, searchUsers);
+// Public/private profile viewing — another user's profile header + post grid.
+router.get('/users/:userId/profile', isAuthorized, getUserProfile);
+router.get('/users/:userId/posts', isAuthorized, userPosts);
 router.get('/friends', isAuthorized, listFriends);
 router.get('/friends/requests', isAuthorized, listFriendRequests);
 router.post('/friends/requests', isAuthorized, requestFriend);
@@ -96,6 +99,7 @@ router.post('/post/:id', isAuthorized, postMethodOverride);
 router.put('/post/:id/collab', isAuthorized, updateCollaboration);
 router.delete('/post/:id/collab', isAuthorized, leaveCollaboration);
 router.get('/profile/info', isAuthorized, info);
+router.put('/profile/privacy', isAuthorized, updatePrivacy);
 router.post('/profile/image', isAuthorized, uploadProfileImage);
 router.delete('/profile/image', isAuthorized, deleteProfileImage);
 router.get('/profile/image/:userId', isAuthorized, getProfileImage);

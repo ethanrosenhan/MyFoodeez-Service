@@ -73,7 +73,7 @@ const searchUsers = async (request, response) => {
 
     try {
         const users = await models.user.findAll({
-            attributes: ['id', 'email', 'first_name', 'last_name'],
+            attributes: ['id', 'email', 'first_name', 'last_name', 'is_public'],
             where: {
                 id: { [Op.ne]: request.user.id },
                 [Op.or]: [
@@ -92,6 +92,7 @@ const searchUsers = async (request, response) => {
         const friendshipByOtherId = await loadFriendshipsByPair(request.user.id, users.map((user) => user.id));
         const data = users.map((user) => ({
             ...mapUserSummary(user),
+            is_public: user.is_public !== false,
             relationship: buildRelationshipFromFriendship(friendshipByOtherId.get(user.id) ?? null, request.user.id)
         }));
 
