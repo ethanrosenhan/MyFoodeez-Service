@@ -64,6 +64,14 @@ export default (sequelize) => {
             type: Sequelize.BOOLEAN,
             allowNull: false,
             defaultValue: true,
+        },
+        // Admin/moderator flag. Admins can delete any post and remove accounts
+        // (e.g. spam or leftover test data). Defaults to false — granted
+        // explicitly (see migrations + scripts/grant-admin.js).
+        is_admin: {
+            type: Sequelize.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
         }
     }, {
         updatedAt: 'updated_at',

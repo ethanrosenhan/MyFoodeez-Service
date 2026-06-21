@@ -12,6 +12,7 @@ import { addToWishlist, removeFromWishlist, listWishlist, listWishlistPlaces } f
 import { registerDeviceToken, unregisterDeviceToken } from '../controllers/device-tokens.js';
 import { listMenu, addMenuItem, updateMenuItem, flagMenuItem, verifyMenuItem, removeMenuItem, parseMenu } from '../controllers/menu.js';
 import { renderRestaurantPage } from '../controllers/restaurant.js';
+import { deletePostAsAdmin, deleteUserAsAdmin } from '../controllers/admin.js';
 import { health, version } from '../controllers/health.js';
 import { supportPage, supportSubmit } from '../controllers/support.js';
 import { privacyPage } from '../controllers/privacy.js';
@@ -100,6 +101,9 @@ router.put('/post/:id/collab', isAuthorized, updateCollaboration);
 router.delete('/post/:id/collab', isAuthorized, leaveCollaboration);
 router.get('/profile/info', isAuthorized, info);
 router.put('/profile/privacy', isAuthorized, updatePrivacy);
+// Admin moderation — guarded inside each handler by an is_admin check.
+router.delete('/admin/post/:id', isAuthorized, deletePostAsAdmin);
+router.delete('/admin/users/:id', isAuthorized, deleteUserAsAdmin);
 router.post('/profile/image', isAuthorized, uploadProfileImage);
 router.delete('/profile/image', isAuthorized, deleteProfileImage);
 router.get('/profile/image/:userId', isAuthorized, getProfileImage);

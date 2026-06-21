@@ -4,6 +4,7 @@ import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import Sequelize from 'sequelize';
 import { FRIENDSHIP_ACCEPTED, getCollabPostIds, normalizeFriendPair } from '../lib/social-helper.js';
+import { isRequestAdmin } from './admin.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 
 const Op = Sequelize.Op;
@@ -58,6 +59,7 @@ const info = async (request, response) => {
             posts_count: postsCount,
             friends_count: friendsCount,
             is_public: user.is_public !== false,
+            is_admin: user.is_admin === true,
             has_profile_image: Boolean(user.profile_image_data && user.profile_image_data.length > 0),
             profile_image_url: (user.profile_image_data && user.profile_image_data.length > 0)
                 ? `/profile/image/${user.id}`
@@ -251,6 +253,7 @@ const getUserProfile = async (request, response) => {
             })
         ]);
         const hasImage = Boolean(target.profile_image_data && target.profile_image_data.length > 0);
+        const viewerIsAdmin = await isRequestAdmin(request);
 
         return sendSuccess(response, 200, {
             id: target.id,
@@ -262,6 +265,7 @@ const getUserProfile = async (request, response) => {
             is_friend: friend,
             relationship,
             can_view: canView,
+            viewer_is_admin: viewerIsAdmin,
             posts_count: authoredCount + collabPostIds.length,
             friends_count: friendsCount,
             has_profile_image: hasImage,

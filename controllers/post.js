@@ -4,6 +4,7 @@ import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
 import { canViewPostRecord, getAcceptedFriendIds, mapOwnerSummary, mapUserSummary } from '../lib/social-helper.js';
+import { isRequestAdmin } from './admin.js';
 import { loadStarSummary } from './stars.js';
 import { notifyFriendsOfPostAtPlace, notifyCollaboratorsTagged } from '../lib/notifications.js';
 import {
@@ -836,7 +837,9 @@ const post = async (request, response) => {
             is_mine: postRecord.user_id === request.user.id,
             owner: mapOwnerSummary(postRecord.user),
             star_count: starSummary.star_count,
-            is_starred_by_me: starSummary.is_starred_by_me
+            is_starred_by_me: starSummary.is_starred_by_me,
+            // Lets the app show moderation controls (delete any post) to admins.
+            viewer_is_admin: await isRequestAdmin(request)
         });
     } catch (error) {
         console.error('post fetch failed', error);
