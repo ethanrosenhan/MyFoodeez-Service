@@ -19,6 +19,13 @@ export default (sequelize) => {
         post_id: {
             type: Sequelize.INTEGER,
             allowNull: false
+        },
+        // The original star rows are now the backing store for one emoji
+        // reaction per user/post. Existing rows migrate to a heart reaction.
+        reaction: {
+            type: Sequelize.STRING,
+            allowNull: false,
+            defaultValue: 'heart'
         }
     }, {
         updatedAt: 'updated_at',

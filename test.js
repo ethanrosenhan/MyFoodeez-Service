@@ -12,6 +12,7 @@ const {
     canViewPostRecord,
     getAcceptedFriendIds,
     getPostAccessWhere,
+    loadRelationshipsForUsers,
     normalizeFriendPair
 } = await import('./lib/social-helper.js');
 const {
@@ -26,7 +27,8 @@ const {
     __setAnthropicClientForTests,
     FLAG_THRESHOLD
 } = await import('./controllers/menu.js');
-const { resolveMenuItemIds, resolveCollaboratorUserIds } = await import('./controllers/post.js');
+const { resolveMenuItemIds, resolveCollaboratorUserIds, normalizePreviewStyle } = await import('./controllers/post.js');
+const { setReaction } = await import('./controllers/stars.js');
 
 // Minimal Express response double that records status + json payload.
 const makeRes = () => {
@@ -55,7 +57,61 @@ test('accepted friend ids include both sides of accepted friendships', async (t)
     t.end();
 });
 
-test('post access allows owner and accepted friends but blocks private friend posts', async (t) => {
+test('review relationship lookup distinguishes accepted and pending friends', async (t) => {
+    const originalFindAll = models.friendship.findAll;
+    models.friendship.findAll = async () => ([
+        { id: 7, user_one_id: 1, user_two_id: 2, requester_user_id: 2, status: 'accepted' },
+        { id: 8, user_one_id: 1, user_two_id: 3, requester_user_id: 1, status: 'pending' }
+    ]);
+
+    const relationships = await loadRelationshipsForUsers(1, [2, 3, 4]);
+    t.equal(relationships.get(2).friendship_status, 'accepted');
+    t.equal(relationships.get(2).friend_request_direction, 'incoming');
+    t.equal(relationships.get(3).friendship_status, 'pending');
+    t.equal(relationships.get(3).friend_request_direction, 'outgoing');
+    t.equal(relationships.has(4), false, 'strangers have no relationship row');
+
+    models.friendship.findAll = originalFindAll;
+    t.end();
+});
+
+test('post preview style accepts supported framing and rejects unknown values', (t) => {
+    t.equal(normalizePreviewStyle('cover-top'), 'cover-top');
+    t.equal(normalizePreviewStyle('contain'), 'contain');
+    t.equal(normalizePreviewStyle('sideways'), 'cover-center');
+    t.equal(normalizePreviewStyle(undefined, 'cover-bottom'), 'cover-bottom');
+    t.end();
+});
+
+test('emoji reaction endpoint switches the viewer reaction and returns grouped counts', async (t) => {
+    const originalPostFindOne = models.post.findOne;
+    const originalFindOrCreate = models.post_star.findOrCreate;
+    const originalReactionFindAll = models.post_star.findAll;
+
+    const row = {
+        user_id: 1,
+        post_id: 9,
+        reaction: 'heart',
+        update: async (changes) => { Object.assign(row, changes); return row; }
+    };
+    models.post.findOne = async () => ({ id: 9, user_id: 1, is_private: false });
+    models.post_star.findOrCreate = async () => [row, false];
+    models.post_star.findAll = async () => [row, { user_id: 2, post_id: 9, reaction: 'fire' }];
+
+    const res = makeRes();
+    await setReaction({ params: { id: '9' }, user: { id: 1 }, body: { reaction: 'fire' } }, res);
+    t.equal(res.statusCode, 200);
+    t.equal(row.reaction, 'fire', 'existing reaction is switched, not duplicated');
+    t.equal(res.body.reaction_counts.fire, 2);
+    t.equal(res.body.my_reaction, 'fire');
+
+    models.post.findOne = originalPostFindOne;
+    models.post_star.findOrCreate = originalFindOrCreate;
+    models.post_star.findAll = originalReactionFindAll;
+    t.end();
+});
+
+test('post access allows owners, public posts, and accepted friends but blocks private friend posts', async (t) => {
     const originalFindOne = models.friendship.findOne;
     models.friendship.findOne = async ({ where }) => (
         where.user_one_id === 1 && where.user_two_id === 2 && where.status === FRIENDSHIP_ACCEPTED
@@ -66,7 +122,7 @@ test('post access allows owner and accepted friends but blocks private friend po
     t.equal(await canViewPostRecord(1, { user_id: 1, is_private: true }), true, 'owner can view private post');
     t.equal(await canViewPostRecord(1, { user_id: 2, is_private: false }), true, 'accepted friend can view shared post');
     t.equal(await canViewPostRecord(1, { user_id: 2, is_private: true }), false, 'accepted friend cannot view private post');
-    t.equal(await canViewPostRecord(1, { user_id: 4, is_private: false }), false, 'non-friend cannot view shared post');
+    t.equal(await canViewPostRecord(1, { user_id: 4, is_private: false }), true, 'public posts remain visible on Discover');
 
     models.friendship.findOne = originalFindOne;
     t.end();

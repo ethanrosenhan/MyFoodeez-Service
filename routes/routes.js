@@ -7,7 +7,7 @@ import { info, uploadProfileImage, deleteProfileImage, getProfileImage, deleteUs
 import { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, videoUploadSignature } from '../controllers/post.js';
 import { search, places, feed, userPosts } from '../controllers/posts.js';
 import { list as listCuisines } from '../controllers/cuisines.js';
-import { addStar, removeStar } from '../controllers/stars.js';
+import { addStar, removeStar, setReaction, removeReaction } from '../controllers/stars.js';
 import { addToWishlist, removeFromWishlist, listWishlist, listWishlistPlaces } from '../controllers/wishlist.js';
 import { registerDeviceToken, unregisterDeviceToken } from '../controllers/device-tokens.js';
 import { listMenu, addMenuItem, updateMenuItem, flagMenuItem, verifyMenuItem, removeMenuItem, parseMenu } from '../controllers/menu.js';
@@ -75,6 +75,8 @@ router.get('/feed', isAuthorized, feed);
 router.get('/cuisines', listCuisines);
 router.post('/post/:id/star', isAuthorized, addStar);
 router.delete('/post/:id/star', isAuthorized, removeStar);
+router.put('/post/:id/reaction', isAuthorized, setReaction);
+router.delete('/post/:id/reaction', isAuthorized, removeReaction);
 router.get('/wishlist', isAuthorized, listWishlist);
 router.get('/wishlist/places', isAuthorized, listWishlistPlaces);
 router.post('/wishlist', isAuthorized, addToWishlist);

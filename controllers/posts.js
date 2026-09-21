@@ -2,7 +2,7 @@ import { models } from '../utils/database.js';
 import Sequelize from 'sequelize';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
-import { getAcceptedFriendIds, getCollabPostIds, getPostAccessWhere, loadCollabRatingsForPosts, loadCollabStateForPosts, mapOwnerSummary } from '../lib/social-helper.js';
+import { getAcceptedFriendIds, getCollabPostIds, getPostAccessWhere, loadCollabRatingsForPosts, loadCollabStateForPosts, loadRelationshipsForUsers, mapOwnerSummary } from '../lib/social-helper.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
 import { loadStarStateForPosts } from './stars.js';
 
@@ -20,8 +20,17 @@ const buildPostImageUrls = (postId, imageCount) => {
     return [`/post/image/${postId}`];
 };
 
-const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false, isCollaborator = false, collaboratorCount = 0, video = null, collabRatings = []) => {
+const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isStarredByMe = false, isCollaborator = false, collaboratorCount = 0, video = null, collabRatings = [], reactionCounts = {}, myReaction = null, ownerRelationship = null) => {
     const imageUrls = buildPostImageUrls(post.id, imageCount);
+    const owner = mapOwnerSummary(post.user);
+    if (owner) {
+        owner.relationship = ownerRelationship || {
+            friendship_status: null,
+            friend_request_id: null,
+            friend_request_direction: null
+        };
+        owner.is_friend = ownerRelationship?.friendship_status === 'accepted';
+    }
     return {
         id: post.id,
         post_date: post.post_date,
@@ -36,6 +45,7 @@ const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isSta
         comments: post.comments,
         image_url: imageUrls[0] || null,
         image_urls: imageUrls,
+        preview_style: post.preview_style || 'cover-center',
         // Video badge/cover for list surfaces. has_video lets the UI show a
         // play affordance without fetching the full post.
         has_video: Boolean(video),
@@ -43,9 +53,11 @@ const mapPostToListItem = (post, requestUserId, imageCount, starCount = 0, isSta
         video_thumbnail_url: video ? video.thumbnail_url : null,
         is_private: post.is_private,
         is_mine: post.user_id === requestUserId,
-        owner: mapOwnerSummary(post.user),
+        owner,
         star_count: starCount,
         is_starred_by_me: isStarredByMe,
+        reaction_counts: reactionCounts,
+        my_reaction: myReaction,
         // Collab: am I a tagged collaborator, and how many collaborators total.
         is_collaborator: isCollaborator,
         collaborator_count: collaboratorCount,
@@ -158,7 +170,7 @@ const search = async (request, response) => {
         log(request, '/posts/search', { page, limit, placeId, scope, sort });
 
         const posts = await models.post.findAll({
-            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private', 'preview_style'],
             where: whereClause,
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
             limit,
@@ -167,12 +179,13 @@ const search = async (request, response) => {
         });
 
         const postIds = posts.map((p) => p.id);
-        const [imageCounts, starState, collabState, videos, collabRatings] = await Promise.all([
+        const [imageCounts, starState, collabState, videos, collabRatings, relationships] = await Promise.all([
             loadImageCountsForPosts(postIds),
             loadStarStateForPosts(postIds, request.user.id),
             loadCollabStateForPosts(postIds, request.user.id),
             loadVideosForPosts(postIds),
-            loadCollabRatingsForPosts(postIds)
+            loadCollabRatingsForPosts(postIds),
+            loadRelationshipsForUsers(request.user.id, posts.map((post) => post.user_id))
         ]);
 
         return sendSuccess(response, 200, {
@@ -185,7 +198,10 @@ const search = async (request, response) => {
                 collabState.mineSet.has(post.id),
                 collabState.counts.get(post.id) || 0,
                 videos.get(post.id) || null,
-                collabRatings.get(post.id) || []
+                collabRatings.get(post.id) || [],
+                starState.reactionCounts.get(post.id) || {},
+                starState.mine.get(post.id) || null,
+                relationships.get(Number(post.user_id)) || null
             ))
         });
     } catch (error) {
@@ -245,7 +261,7 @@ const places = async (request, response) => {
         }
 
         const posts = await models.post.findAll({
-            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'rating', 'place', 'place_id', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'rating', 'place', 'place_id', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private', 'preview_style'],
             where: whereClause,
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
             limit,
@@ -368,7 +384,7 @@ const feed = async (request, response) => {
         log(request, '/feed', { page, limit });
 
         const posts = await models.post.findAll({
-            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private', 'preview_style'],
             where: whereClause,
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
             limit,
@@ -395,7 +411,9 @@ const feed = async (request, response) => {
                 collabState.mineSet.has(post.id),
                 collabState.counts.get(post.id) || 0,
                 videos.get(post.id) || null,
-                collabRatings.get(post.id) || []
+                collabRatings.get(post.id) || [],
+                starState.reactionCounts.get(post.id) || {},
+                starState.mine.get(post.id) || null
             ))
         });
     } catch (error) {
@@ -445,7 +463,7 @@ const userPosts = async (request, response) => {
         }
 
         const posts = await models.post.findAll({
-            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private'],
+            attributes: ['id', 'user_id', 'post_date', 'cuisine', 'cuisine_id', 'place_id', 'rating', 'place', 'place_secondary_text', 'comments', 'place_latitude', 'place_longitude', 'is_private', 'preview_style'],
             where: whereClause,
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
             limit,
@@ -472,7 +490,9 @@ const userPosts = async (request, response) => {
                 collabState.mineSet.has(post.id),
                 collabState.counts.get(post.id) || 0,
                 videos.get(post.id) || null,
-                collabRatings.get(post.id) || []
+                collabRatings.get(post.id) || [],
+                starState.reactionCounts.get(post.id) || {},
+                starState.mine.get(post.id) || null
             ))
         });
     } catch (error) {

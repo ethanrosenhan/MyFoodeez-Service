@@ -17,6 +17,7 @@ import {
 const MAX_IMAGES_PER_POST = 5;
 // "A handful" of people can share one collab post.
 const MAX_COLLABORATORS = 8;
+const PREVIEW_STYLES = new Set(['cover-top', 'cover-center', 'cover-bottom', 'contain']);
 
 const normalizeFields = (fields) => {
     const normalized = {};
@@ -64,6 +65,14 @@ const parsePrivateFlag = (value, fallback = true) => {
         return true;
     }
     return fallback;
+};
+
+const normalizePreviewStyle = (value, fallback = 'cover-center') => {
+    if (typeof value !== 'string') {
+        return PREVIEW_STYLES.has(fallback) ? fallback : 'cover-center';
+    }
+    const normalized = value.trim().toLowerCase();
+    return PREVIEW_STYLES.has(normalized) ? normalized : (PREVIEW_STYLES.has(fallback) ? fallback : 'cover-center');
 };
 
 // Resolve the (cuisine_id, cuisine) pair from the client payload.
@@ -116,7 +125,8 @@ const parseFieldsToPostValues = (fields, existingPost = null) => {
         cuisine_id,
         rating,
         comments,
-        is_private: parsePrivateFlag(fields.is_private, existingPost?.is_private ?? false)
+        is_private: parsePrivateFlag(fields.is_private, existingPost?.is_private ?? false),
+        preview_style: normalizePreviewStyle(fields.preview_style, existingPost?.preview_style)
     };
 };
 
@@ -737,6 +747,7 @@ const post = async (request, response) => {
                 'place_longitude',
                 'comments',
                 'is_private',
+                'preview_style',
                 'menu_item_id',
                 [sequelize.literal('(image_data IS NOT NULL AND octet_length(image_data) > 0)'), 'has_legacy_image']
             ],
@@ -834,10 +845,13 @@ const post = async (request, response) => {
             my_collab: myCollab,
             is_collaborator: Boolean(myCollabRow),
             is_private: postRecord.is_private,
+            preview_style: postRecord.preview_style,
             is_mine: postRecord.user_id === request.user.id,
             owner: mapOwnerSummary(postRecord.user),
             star_count: starSummary.star_count,
             is_starred_by_me: starSummary.is_starred_by_me,
+            reaction_counts: starSummary.reaction_counts,
+            my_reaction: starSummary.my_reaction,
             // Lets the app show moderation controls (delete any post) to admins.
             viewer_is_admin: await isRequestAdmin(request)
         });
@@ -889,4 +903,4 @@ const leaveCollaboration = async (request, response) => {
     }
 };
 
-export { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, videoUploadSignature, MAX_IMAGES_PER_POST, resolveMenuItemIds, resolveCollaboratorUserIds };
+export { addPost, image, imageAtIndex, post, updatePost, deletePost, postMethodOverride, updateCollaboration, leaveCollaboration, videoUploadSignature, MAX_IMAGES_PER_POST, resolveMenuItemIds, resolveCollaboratorUserIds, normalizePreviewStyle };

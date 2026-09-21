@@ -69,6 +69,14 @@ export default (sequelize) => {
             allowNull: false,
             defaultValue: false
         },
+        // Controls how the cover photo is framed on compact cards. The full
+        // post view still shows the uncropped image; this is only a feed/grid
+        // presentation preference selected by the author.
+        preview_style: {
+            type: Sequelize.STRING,
+            allowNull: false,
+            defaultValue: 'cover-center'
+        },
         // Optional link to a structured menu_item ("what did you order?").
         // Nullable by design — posting never requires touching the menu.
         menu_item_id: {

@@ -25,7 +25,8 @@ const mapSourcePost = (sourcePost) => {
         post_id: sourcePost.id,
         owner_name: getDisplayName(sourcePost.user) || 'A friend',
         cuisine: sourcePost.cuisine && sourcePost.cuisine !== 'Unknown' ? sourcePost.cuisine : null,
-        image_url: `/post/image/${sourcePost.id}`
+        image_url: `/post/image/${sourcePost.id}`,
+        preview_style: sourcePost.preview_style || 'cover-center'
     };
 };
 
@@ -155,7 +156,7 @@ const listWishlist = async (request, response) => {
                 model: models.post,
                 as: 'source_post',
                 required: false,
-                attributes: ['id', 'cuisine'],
+                attributes: ['id', 'cuisine', 'preview_style'],
                 include: [{ model: models.user, attributes: ['first_name', 'last_name', 'email'] }]
             }],
             order: [['created_at', 'DESC']]
