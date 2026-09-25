@@ -1,6 +1,6 @@
 const applyExtraSetup =  (sequelize)=> {
 
-	const { user, post, post_image, post_star, audit, friendship, user_place_intent, device_token, menu_item, post_menu_item, post_collaborator, post_media } = sequelize.models;
+	const { user, post, post_image, post_star, audit, friendship, user_place_intent, device_token, menu_item, post_menu_item, post_collaborator, post_media, user_block, content_report } = sequelize.models;
 	post.belongsTo(user, {foreignKey: 'user_id'});
 	post.hasMany(post_image, { foreignKey: 'post_id', onDelete: 'CASCADE' });
 	// Video (and future large media) stored in object storage; rows hold URLs.
@@ -30,6 +30,10 @@ const applyExtraSetup =  (sequelize)=> {
 	audit.belongsTo(user, {foreignKey: 'user_id'});
 	friendship.belongsTo(user, { foreignKey: 'requester_user_id', as: 'requester' });
 	friendship.belongsTo(user, { foreignKey: 'addressee_user_id', as: 'addressee' });
+	user_block.belongsTo(user, { foreignKey: 'blocker_user_id', as: 'blocker' });
+	user_block.belongsTo(user, { foreignKey: 'blocked_user_id', as: 'blocked_user' });
+	content_report.belongsTo(user, { foreignKey: 'reporter_user_id', as: 'reporter' });
+	content_report.belongsTo(post, { foreignKey: 'post_id' });
 }
 
 export { applyExtraSetup }

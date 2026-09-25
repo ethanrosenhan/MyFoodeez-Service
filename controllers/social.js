@@ -5,6 +5,8 @@ import {
     FRIENDSHIP_ACCEPTED,
     FRIENDSHIP_DECLINED,
     FRIENDSHIP_PENDING,
+    getBlockedUserIds,
+    getBlockState,
     mapUserSummary,
     normalizeFriendPair
 } from '../lib/social-helper.js';
@@ -72,10 +74,11 @@ const searchUsers = async (request, response) => {
     }
 
     try {
+        const blockedUserIds = await getBlockedUserIds(request.user.id);
         const users = await models.user.findAll({
             attributes: ['id', 'email', 'first_name', 'last_name', 'is_public'],
             where: {
-                id: { [Op.ne]: request.user.id },
+                id: { [Op.notIn]: [request.user.id, ...blockedUserIds] },
                 [Op.or]: [
                     { first_name: { [Op.iLike]: `%${query}%` } },
                     { last_name: { [Op.iLike]: `%${query}%` } },
@@ -162,6 +165,10 @@ const requestFriend = async (request, response) => {
     }
 
     try {
+        const blockState = await getBlockState(request.user.id, targetUser.id);
+        if (blockState.viewer_blocked_target || blockState.target_blocked_viewer) {
+            return sendError(response, 403, 'Friend requests are unavailable for this user', 'user_blocked');
+        }
         const pair = normalizeFriendPair(request.user.id, targetUser.id);
         const existing = await models.friendship.findOne({ where: pair });
         if (existing && existing.status !== FRIENDSHIP_DECLINED) {

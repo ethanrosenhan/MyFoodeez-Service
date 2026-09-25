@@ -14,6 +14,8 @@ import menu_item from '../models/menu_item.js'
 import post_menu_item from '../models/post_menu_item.js'
 import post_collaborator from '../models/post_collaborator.js'
 import post_media from '../models/post_media.js'
+import user_block from '../models/user_block.js'
+import content_report from '../models/content_report.js'
 import {applyExtraSetup} from './extra-setup.js';
 
 let dboptions = {
@@ -47,7 +49,9 @@ const modelDefiners = [
     menu_item,
     post_menu_item,
     post_collaborator,
-    post_media
+    post_media,
+    user_block,
+    content_report
 ];
 
 for (const modelDefiner of modelDefiners) {

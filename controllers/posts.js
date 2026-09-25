@@ -2,7 +2,7 @@ import { models } from '../utils/database.js';
 import Sequelize from 'sequelize';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
-import { getAcceptedFriendIds, getCollabPostIds, getPostAccessWhere, loadCollabRatingsForPosts, loadCollabStateForPosts, loadRelationshipsForUsers, mapOwnerSummary } from '../lib/social-helper.js';
+import { getAcceptedFriendIds, getBlockState, getCollabPostIds, getPostAccessWhere, loadCollabRatingsForPosts, loadCollabStateForPosts, loadRelationshipsForUsers, mapOwnerSummary } from '../lib/social-helper.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
 import { loadStarStateForPosts } from './stars.js';
 
@@ -435,6 +435,10 @@ const userPosts = async (request, response) => {
         }
         const isSelf = targetId === request.user.id;
         if (!isSelf) {
+            const blockState = await getBlockState(request.user.id, targetId);
+            if (blockState.viewer_blocked_target || blockState.target_blocked_viewer) {
+                return sendError(response, 404, 'User not found', 'user_not_found');
+            }
             const target = await models.user.findOne({ attributes: ['id', 'is_public'], where: { id: targetId } });
             if (!target) {
                 return sendError(response, 404, 'User not found', 'user_not_found');

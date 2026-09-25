@@ -11,6 +11,7 @@ const {
     FRIENDSHIP_DECLINED,
     canViewPostRecord,
     getAcceptedFriendIds,
+    getBlockedUserIds,
     getPostAccessWhere,
     loadRelationshipsForUsers,
     normalizeFriendPair
@@ -29,6 +30,7 @@ const {
 } = await import('./controllers/menu.js');
 const { resolveMenuItemIds, resolveCollaboratorUserIds, normalizePreviewStyle } = await import('./controllers/post.js');
 const { setReaction } = await import('./controllers/stars.js');
+const { blockUser, reportPost } = await import('./controllers/moderation.js');
 
 // Minimal Express response double that records status + json payload.
 const makeRes = () => {
@@ -37,6 +39,10 @@ const makeRes = () => {
     res.json = (payload) => { res.body = payload; return res; };
     return res;
 };
+
+// Blocking-aware helpers are used throughout the suite. Individual blocking
+// tests override this default with the rows they need.
+models.user_block.findAll = async () => [];
 
 test('friend pair normalization is stable regardless of requester order', (t) => {
     t.deepEqual(normalizeFriendPair(10, 4), { user_one_id: 4, user_two_id: 10 });
@@ -54,6 +60,32 @@ test('accepted friend ids include both sides of accepted friendships', async (t)
     t.deepEqual(await getAcceptedFriendIds(1), [2, 3]);
 
     models.friendship.findAll = originalFindAll;
+    t.end();
+});
+
+test('blocked users are removed from friend ids and post search scopes', async (t) => {
+    const originalFriendFindAll = models.friendship.findAll;
+    const originalBlockFindAll = models.user_block.findAll;
+    const originalCollabFindAll = models.post_collaborator.findAll;
+    models.friendship.findAll = async () => ([
+        { user_one_id: 1, user_two_id: 2 },
+        { user_one_id: 1, user_two_id: 3 }
+    ]);
+    models.user_block.findAll = async () => ([
+        { blocker_user_id: 1, blocked_user_id: 2 }
+    ]);
+    models.post_collaborator.findAll = async () => [];
+
+    t.deepEqual(await getBlockedUserIds(1), [2]);
+    t.deepEqual(await getAcceptedFriendIds(1), [3], 'blocked friend is excluded');
+    const discoverWhere = await getPostAccessWhere(1, 'discover');
+    t.deepEqual(discoverWhere[Sequelize.Op.and][1], {
+        user_id: { [Sequelize.Op.notIn]: [2] }
+    }, 'blocked authors are excluded from discover');
+
+    models.friendship.findAll = originalFriendFindAll;
+    models.user_block.findAll = originalBlockFindAll;
+    models.post_collaborator.findAll = originalCollabFindAll;
     t.end();
 });
 
@@ -193,6 +225,71 @@ test('post resolveCollaboratorUserIds keeps only accepted friends, de-duped, aut
 
 test('declined status constant is available for duplicate request reset policy', (t) => {
     t.equal(FRIENDSHIP_DECLINED, 'declined');
+    t.end();
+});
+
+test('post report records a valid report without deleting content automatically', async (t) => {
+    const originalPostFindOne = models.post.findOne;
+    const originalReportFindOrCreate = models.content_report.findOrCreate;
+    let capturedDefaults = null;
+    models.post.findOne = async () => ({ id: 42, user_id: 2, is_private: false });
+    models.content_report.findOrCreate = async ({ defaults }) => {
+        capturedDefaults = defaults;
+        return [{ update: async () => {} }, true];
+    };
+
+    const res = makeRes();
+    await reportPost({
+        params: { id: '42' },
+        user: { id: 1 },
+        body: { reason: 'spam', details: 'Repeated promotional content' }
+    }, res);
+
+    t.equal(res.statusCode, 201);
+    t.equal(res.body.reported, true);
+    t.equal(capturedDefaults.reason, 'spam');
+    t.equal(capturedDefaults.status, 'pending');
+
+    models.post.findOne = originalPostFindOne;
+    models.content_report.findOrCreate = originalReportFindOrCreate;
+    t.end();
+});
+
+test('blocking a user removes friendship and active collaboration ties', async (t) => {
+    const originalUserFindByPk = models.user.findByPk;
+    const originalBlockFindOrCreate = models.user_block.findOrCreate;
+    const originalFriendDestroy = models.friendship.destroy;
+    const originalPostFindAll = models.post.findAll;
+    const originalCollaboratorUpdate = models.post_collaborator.update;
+    let friendshipWhere = null;
+    let collaboratorWhere = null;
+
+    models.user.findByPk = async () => ({ id: 2 });
+    models.user_block.findOrCreate = async () => [{ id: 1 }, true];
+    models.friendship.destroy = async ({ where }) => { friendshipWhere = where; return 1; };
+    models.post.findAll = async () => ([
+        { id: 10, user_id: 1 },
+        { id: 20, user_id: 2 }
+    ]);
+    models.post_collaborator.update = async (_values, { where }) => {
+        collaboratorWhere = where;
+        return [2];
+    };
+
+    const res = makeRes();
+    await blockUser({ params: { userId: '2' }, user: { id: 1 } }, res);
+
+    t.equal(res.statusCode, 200);
+    t.equal(res.body.blocked, true);
+    t.deepEqual(friendshipWhere, { user_one_id: 1, user_two_id: 2 });
+    t.equal(collaboratorWhere.status, 'active');
+    t.equal(collaboratorWhere[Sequelize.Op.or].length, 2, 'both users\' authored posts lose cross-user collaborators');
+
+    models.user.findByPk = originalUserFindByPk;
+    models.user_block.findOrCreate = originalBlockFindOrCreate;
+    models.friendship.destroy = originalFriendDestroy;
+    models.post.findAll = originalPostFindAll;
+    models.post_collaborator.update = originalCollaboratorUpdate;
     t.end();
 });
 

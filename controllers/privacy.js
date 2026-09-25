@@ -84,28 +84,30 @@ const privacyPage = async (request, response) => {
 		<body>
 			<header class="header">
 				<h1 class="main-title">Privacy Policy</h1>
-				<p class="effective-date">Effective Date: 11/1/2024</p>
+				<p class="effective-date">Effective Date: September 25, 2026</p>
 			</header>
 
 			<main class="content">
 				<section>
 					<h2>1. Information Collection and Use</h2>
-					<p>We may collect personal information to provide and improve our App's functionality. This includes:</p>
+					<p>MyFoodeez LLC processes information needed to provide and protect MyFoodeez. This includes:</p>
 					<ul>
-						<li>Name</li>
-						<li>Email Address</li>
-						<li>Location (if permission is granted)</li>
+						<li>Account information such as name, email address, authentication identifiers, profile photo, and settings</li>
+						<li>User content such as meal photos and videos, ratings, notes, dishes, restaurant selections, reactions, collaborative posts, and reports</li>
+						<li>Device location when permission is granted for nearby suggestions, plus restaurant locations attached to posts</li>
+						<li>Push-notification tokens, app and operating-system information, security logs, and limited diagnostics</li>
+						<li>Messages and attachments sent to support</li>
 					</ul>
 				</section>
 
 				<section>
 					<h3>1.1 Personal Data</h3>
-					<p>We may collect identifiable information such as your name, email address, and location. Usage data includes IP addresses and device types.</p>
+					<p>We use this information to provide accounts, posts, restaurant discovery, social and collaborative features, menu scanning, notifications, support, security, moderation, and account deletion.</p>
 				</section>
 
 				<section>
-					<h2>2. Cookies and Tracking</h2>
-					<p>Our App uses cookies to monitor activity and enhance the user experience. You may choose to disable cookies in your device settings.</p>
+					<h2>2. Service Providers and Sharing</h2>
+					<p>We do not sell personal information. We share limited information only as needed with providers that support cloud hosting and storage, authentication, maps and restaurant search, media delivery, menu processing, email, and push notifications. Public posts and public profile information are visible to other users and may appear on shareable MyFoodeez pages.</p>
 				</section>
 
 				<section>
@@ -115,6 +117,7 @@ const privacyPage = async (request, response) => {
 						<li>Provide, operate, and maintain our App</li>
 						<li>Improve and customize the user experience</li>
 						<li>Communicate updates or issues</li>
+						<li>Review reports, prevent abuse, and protect users</li>
 					</ul>
 				</section>
 
@@ -125,7 +128,7 @@ const privacyPage = async (request, response) => {
 
 				<section>
 					<h2>5. User Rights</h2>
-					<p>You have the right to access, update, or delete your personal information. Please contact us to exercise these rights.</p>
+					<p>You can update profile and privacy settings, block users, report inappropriate content, revoke device permissions, or delete your account from the app. Contact us for other privacy requests.</p>
 				</section>
 
 				<section>
@@ -142,7 +145,7 @@ const privacyPage = async (request, response) => {
 			</main>
 
 			<footer class="footer">
-				<p>© 2024 Foodeez. All rights reserved.</p>
+				<p>© 2026 MyFoodeez LLC. All rights reserved.</p>
 			</footer>
 		</body>
 		</html>

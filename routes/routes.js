@@ -18,6 +18,7 @@ import { supportPage, supportSubmit } from '../controllers/support.js';
 import { privacyPage } from '../controllers/privacy.js';
 import { proxyGooglePlaces } from '../controllers/maps.js';
 import { sharePostImage, sharePostPage } from '../controllers/share.js';
+import { blockUser, listBlockedUsers, reportPost, unblockUser } from '../controllers/moderation.js';
 import {
     acceptFriendRequest,
     declineFriendRequest,
@@ -64,6 +65,9 @@ router.post('/friends/requests', isAuthorized, requestFriend);
 router.post('/friends/requests/:id/accept', isAuthorized, acceptFriendRequest);
 router.post('/friends/requests/:id/decline', isAuthorized, declineFriendRequest);
 router.delete('/friends/:userId', isAuthorized, removeFriend);
+router.get('/users/blocked', isAuthorized, listBlockedUsers);
+router.post('/users/:userId/block', isAuthorized, blockUser);
+router.delete('/users/:userId/block', isAuthorized, unblockUser);
 
 // Signed Cloudinary upload request for direct-from-client video uploads.
 router.get('/post/media/video-signature', isAuthorized, videoUploadSignature);
@@ -77,6 +81,7 @@ router.post('/post/:id/star', isAuthorized, addStar);
 router.delete('/post/:id/star', isAuthorized, removeStar);
 router.put('/post/:id/reaction', isAuthorized, setReaction);
 router.delete('/post/:id/reaction', isAuthorized, removeReaction);
+router.post('/post/:id/report', isAuthorized, reportPost);
 router.get('/wishlist', isAuthorized, listWishlist);
 router.get('/wishlist/places', isAuthorized, listWishlistPlaces);
 router.post('/wishlist', isAuthorized, addToWishlist);

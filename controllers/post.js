@@ -3,7 +3,7 @@ import { IncomingForm } from 'formidable';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 import { findById as findCuisineById } from '../constants/cuisines.js';
-import { canViewPostRecord, getAcceptedFriendIds, mapOwnerSummary, mapUserSummary } from '../lib/social-helper.js';
+import { canViewPostRecord, getAcceptedFriendIds, getBlockedUserIds, mapOwnerSummary, mapUserSummary } from '../lib/social-helper.js';
 import { isRequestAdmin } from './admin.js';
 import { loadStarSummary } from './stars.js';
 import { notifyFriendsOfPostAtPlace, notifyCollaboratorsTagged } from '../lib/notifications.js';
@@ -806,7 +806,9 @@ const post = async (request, response) => {
             include: [{ model: models.user, attributes: ['id', 'email', 'first_name', 'last_name'] }],
             order: [['created_at', 'ASC'], ['id', 'ASC']]
         });
-        const collaborators = collabRows
+        const blockedUserIds = new Set(await getBlockedUserIds(request.user.id));
+        const visibleCollabRows = collabRows.filter((row) => !blockedUserIds.has(Number(row.user_id)));
+        const collaborators = visibleCollabRows
             .filter((row) => row.user)
             .map((row) => ({
                 user: mapUserSummary(row.user),
@@ -814,7 +816,7 @@ const post = async (request, response) => {
                 comments: row.comments,
                 is_me: row.user_id === request.user.id
             }));
-        const myCollabRow = collabRows.find((row) => row.user_id === request.user.id) || null;
+        const myCollabRow = visibleCollabRows.find((row) => Number(row.user_id) === Number(request.user.id)) || null;
         const myCollab = myCollabRow
             ? { rating: myCollabRow.rating, comments: myCollabRow.comments }
             : null;

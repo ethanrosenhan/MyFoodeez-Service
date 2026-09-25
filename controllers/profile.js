@@ -3,7 +3,8 @@ import { models } from '../utils/database.js';
 import { log } from '../lib/log-helper.js';
 import { sendError, sendSuccess } from '../lib/response-helper.js';
 import Sequelize from 'sequelize';
-import { FRIENDSHIP_ACCEPTED, getCollabPostIds, normalizeFriendPair } from '../lib/social-helper.js';
+import { FRIENDSHIP_ACCEPTED, getBlockState, getCollabPostIds, normalizeFriendPair } from '../lib/social-helper.js';
+import { deleteUserAndAllData } from '../lib/user-cleanup.js';
 import { isRequestAdmin } from './admin.js';
 import { INVALID_REQUEST_ERROR } from '../constants/global.js';
 
@@ -122,6 +123,10 @@ const canViewProfileImage = async (viewerId, targetUserId) => {
     if (viewerId === targetUserId) {
         return true;
     }
+    const blockState = await getBlockState(viewerId, targetUserId);
+    if (blockState.viewer_blocked_target || blockState.target_blocked_viewer) {
+        return false;
+    }
     // Public profiles expose their avatar to anyone; private ones to friends.
     const target = await models.user.findOne({
         attributes: ['id', 'is_public'],
@@ -164,22 +169,7 @@ const getProfileImage = async (request, response) => {
 const deleteUserAndPosts = async (request, response) => {
     log(request, '/profile/delete', { email: request.user.email });
     try {
-        const posts = await models.post.findAll({ where: { user_id: request.user.id }, attributes: ['id'] });
-        const postIds = posts.map((p) => p.id);
-        if (postIds.length > 0) {
-            await models.post_image.destroy({ where: { post_id: postIds } });
-        }
-        await models.post.destroy({ where: { user_id: request.user.id } });
-        await models.friendship.destroy({
-            where: {
-                [Op.or]: [
-                    { user_one_id: request.user.id },
-                    { user_two_id: request.user.id }
-                ]
-            }
-        });
-        await models.user.destroy({ where: { id: request.user.id } });
-
+        await deleteUserAndAllData(request.user.id);
         return sendSuccess(response, 200, { message: 'User and associated posts deleted successfully.' });
     } catch (error) {
         console.error('profile delete failed', error);
@@ -226,10 +216,17 @@ const getUserProfile = async (request, response) => {
             return sendError(response, 404, 'User not found', 'user_not_found');
         }
         const isSelf = targetId === request.user.id;
+        const blockState = isSelf
+            ? { viewer_blocked_target: false, target_blocked_viewer: false }
+            : await getBlockState(request.user.id, targetId);
+        if (blockState.target_blocked_viewer) {
+            return sendError(response, 404, 'User not found', 'user_not_found');
+        }
+        const isBlocked = blockState.viewer_blocked_target;
         // Single friendship lookup powers both the friend flag and the
         // relationship block the client uses to render the Add/Requested/
         // Accept/Friends button.
-        const friendshipRow = isSelf
+        const friendshipRow = isSelf || isBlocked
             ? null
             : await models.friendship.findOne({ where: normalizeFriendPair(request.user.id, targetId) });
         const friend = friendshipRow ? friendshipRow.status === FRIENDSHIP_ACCEPTED : false;
@@ -240,7 +237,7 @@ const getUserProfile = async (request, response) => {
                 friend_request_direction: friendshipRow.requester_user_id === request.user.id ? 'outgoing' : 'incoming'
             }
             : { friendship_status: null, friend_request_id: null, friend_request_direction: null };
-        const canView = isSelf || target.is_public !== false || friend;
+        const canView = !isBlocked && (isSelf || target.is_public !== false || friend);
 
         const [authoredCount, collabPostIds, friendsCount] = await Promise.all([
             models.post.count({ where: { user_id: targetId } }),
@@ -263,6 +260,7 @@ const getUserProfile = async (request, response) => {
             is_public: target.is_public !== false,
             is_self: isSelf,
             is_friend: friend,
+            is_blocked: isBlocked,
             relationship,
             can_view: canView,
             viewer_is_admin: viewerIsAdmin,
